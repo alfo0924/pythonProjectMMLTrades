@@ -4,7 +4,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import webbrowser
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # 下載黃金歷史數據
 data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
@@ -44,18 +44,18 @@ final_cumulative_return = cumulative_return.iloc[-1]
 buy_signals = data[data['Signal'] == 1].index
 sell_signals = data[data['Signal'] == 0].index
 
-# 生成圖表
-plt.figure(figsize=(14, 7))
-plt.plot(data['Close'], label='Close Price')
-plt.plot(cumulative_return, label='Strategy Cumulative Return')
-plt.scatter(buy_signals, data.loc[buy_signals]['Close'], marker='^', color='g', label='Buy Signal', alpha=1)
-plt.scatter(sell_signals, data.loc[sell_signals]['Close'], marker='v', color='r', label='Sell Signal', alpha=1)
-plt.title('Gold Trading Strategy')
-plt.xlabel('Date')
-plt.ylabel('Price')
-plt.legend()
-plt.grid()
-plt.savefig('trading_strategy.png')
+# 生成交互式圖表
+fig = go.Figure()
+
+fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
+fig.add_trace(go.Scatter(x=data.index, y=cumulative_return, mode='lines', name='Strategy Cumulative Return'))
+
+fig.add_trace(go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Close'], mode='markers', name='Buy Signal',
+                         marker=dict(color='green', size=10, symbol='triangle-up')))
+fig.add_trace(go.Scatter(x=sell_signals, y=data.loc[sell_signals]['Close'], mode='markers', name='Sell Signal',
+                         marker=dict(color='red', size=10, symbol='triangle-down')))
+
+fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -65,6 +65,7 @@ html_content = f"""
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>交易結果</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <h1>交易結果</h1>
@@ -77,7 +78,11 @@ html_content = f"""
         <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
-    <img src="trading_strategy.png" alt="Trading Strategy">
+    <div id="plotly-chart"></div>
+    <script>
+        var figure = {fig.to_json()};
+        Plotly.newPlot('plotly-chart', figure.data, figure.layout);
+    </script>
 </body>
 </html>
 """
