@@ -47,6 +47,7 @@ data['SMA_200'] = data['Close'].rolling(window=200).mean()  # 计算200日简单
 # 当50日SMA上穿200日SMA时产生买入信号，当50日SMA下穿200日SMA时产生卖出信号
 data['Signal'] = np.where(data['SMA_50'] > data['SMA_200'], 1, -1)
 
+
 # 加入交易信號
 buy_signals = data[data['Signal'] == 1].index
 sell_signals = data[data['Signal'] == -1].index
