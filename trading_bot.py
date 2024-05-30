@@ -7,7 +7,7 @@ import webbrowser
 import matplotlib.pyplot as plt
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2020-01-01', end='2024-01-01')
+data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
 data = data[['Close']]
 
 # 生成特徵和標籤
