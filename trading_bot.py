@@ -4,9 +4,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import webbrowser
+import matplotlib.pyplot as plt
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2024-01-01', end='2024-05-01')
+data = yf.download('GC=F', start='2020-01-01', end='2024-01-01')
 data = data[['Close']]
 
 # 生成特徵和標籤
@@ -37,10 +38,24 @@ data = data.dropna()
 
 # 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
 buy_signals = data[data['Signal'] == 1].index
 sell_signals = data[data['Signal'] == 0].index
+
+# 生成圖表
+plt.figure(figsize=(14, 7))
+plt.plot(data['Close'], label='Close Price')
+plt.plot(cumulative_return, label='Strategy Cumulative Return')
+plt.scatter(buy_signals, data.loc[buy_signals]['Close'], marker='^', color='g', label='Buy Signal', alpha=1)
+plt.scatter(sell_signals, data.loc[sell_signals]['Close'], marker='v', color='r', label='Sell Signal', alpha=1)
+plt.title('Gold Trading Strategy')
+plt.xlabel('Date')
+plt.ylabel('Price')
+plt.legend()
+plt.grid()
+plt.savefig('trading_strategy.png')
 
 # 生成HTML內容
 html_content = f"""
@@ -55,15 +70,14 @@ html_content = f"""
     <h1>交易結果</h1>
     <p>模型準確度: {accuracy:.2f}</p>
     <h2>累積收益</h2>
-    <p>{cumulative_return.to_list()}</p>
-    <h2>買進點位</h2>
+    <p>{final_cumulative_return:.2f}</p>
+    <h2>交易點位</h2>
     <ul>
-        {''.join([f'<li>{date}</li>' for date in buy_signals])}
+        <li>買進點位: {buy_signals[:3].to_list()}</li>
+        <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
-    <h2>賣出點位</h2>
-    <ul>
-        {''.join([f'<li>{date}</li>' for date in sell_signals])}
-    </ul>
+    <h2>交易圖表</h2>
+    <img src="trading_strategy.png" alt="Trading Strategy">
 </body>
 </html>
 """
