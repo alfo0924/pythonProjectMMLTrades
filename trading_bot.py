@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.svm import SVR
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
 
 # 下載黃金歷史數據
@@ -58,12 +58,12 @@ split = int(0.8 * len(X))
 X_train, X_test = X_scaled[:split], X_scaled[split:]
 y_train, y_test = y[:split], y[split:]
 
-# 創建並訓練SVM模型
-svm_model = SVR(kernel='linear')
-svm_model.fit(X_train, y_train)
+# 創建並訓練隨機森林模型
+rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
 
 # 生成預測
-predictions = svm_model.predict(X_test)
+predictions = rf_model.predict(X_test)
 
 # 將預測轉換為交易信號和策略收益率
 weekly_data['Predicted_Price_Change'] = np.nan
@@ -72,9 +72,6 @@ weekly_data['Buy_Signal'] = np.where(weekly_data['Predicted_Price_Change'] > 0, 
 weekly_data['Sell_Signal'] = np.where(weekly_data['Predicted_Price_Change'] < 0, 1, 0)
 weekly_data['Signal'] = weekly_data['Buy_Signal'] - weekly_data['Sell_Signal']
 weekly_data['Strategy_Return'] = weekly_data['Signal'].shift(1) * weekly_data['Close'].pct_change()
-
-# 評估模型
-accuracy = svm_model.score(X_test, y_test)
 
 # 計算累積收益
 cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
@@ -110,7 +107,6 @@ html_content = f"""
 </head>
 <body>
     <h1>交易結果</h1>
-    <h2>模型準確率: {accuracy:.2f}</h2>
     <h2>累積收益</h2>
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
