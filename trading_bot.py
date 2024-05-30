@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import StandardScaler
 
 # 下載黃金歷史數據
@@ -58,12 +58,12 @@ split = int(0.8 * len(X))
 X_train, X_test = X_scaled[:split], X_scaled[split:]
 y_train, y_test = y[:split], y[split:]
 
-# 創建並訓練隨機森林模型
-rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-rf_model.fit(X_train, y_train)
+# 創建並訓練決策樹模型
+tree_model = DecisionTreeRegressor(random_state=42)
+tree_model.fit(X_train, y_train)
 
 # 生成預測
-predictions = rf_model.predict(X_test)
+predictions = tree_model.predict(X_test)
 
 # 將預測轉換為交易信號和策略收益率
 weekly_data['Predicted_Price_Change'] = np.nan
