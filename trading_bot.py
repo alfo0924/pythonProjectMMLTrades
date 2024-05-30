@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.preprocessing import StandardScaler
 
 # 下載黃金歷史數據
 data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
@@ -36,42 +34,23 @@ weekly_data['RSI'] = compute_RSI(weekly_data['Close'], 14)
 # 設定壓力水平（假設為前期高點作為壓力水平）
 weekly_data['Resistance'] = weekly_data['Close'].rolling(window=50).max()
 
-# 生成特徵：價格變化率
-weekly_data['Price_Change'] = weekly_data['Close'].pct_change()
+# 生成交易信號和策略收益率
+weekly_data['Buy_Signal'] = ((weekly_data['Close'] > weekly_data['SMA']) &
+                             (weekly_data['RSI'] < 70) &
+                             (weekly_data['Close'] < weekly_data['Resistance'])).astype(int)
 
-# 生成目標變量：未來一週的價格變化率
-weekly_data['Target'] = weekly_data['Price_Change'].shift(-1)
+weekly_data['Sell_Signal'] = ((weekly_data['Close'] < weekly_data['SMA']) &
+                              (weekly_data['RSI'] > 30) &
+                              (weekly_data['Close'] > weekly_data['Resistance'])).astype(int)
 
-# 填充缺失值
-weekly_data.dropna(inplace=True)
-
-# 分割特徵和目標變量
-X = weekly_data[['SMA', 'RSI', 'Resistance', 'Price_Change']].values
-y = weekly_data['Target'].values
-
-# 對特徵進行標準化
-scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
-
-# 拆分訓練集和測試集
-split = int(0.8 * len(X))
-X_train, X_test = X_scaled[:split], X_scaled[split:]
-y_train, y_test = y[:split], y[split:]
-
-# 創建並訓練決策樹模型
-tree_model = DecisionTreeRegressor(random_state=42)
-tree_model.fit(X_train, y_train)
-
-# 生成預測
-predictions = tree_model.predict(X_test)
-
-# 將預測轉換為交易信號和策略收益率
-weekly_data['Predicted_Price_Change'] = np.nan
-weekly_data.iloc[split:, -1] = predictions
-weekly_data['Buy_Signal'] = np.where(weekly_data['Predicted_Price_Change'] > 0, 1, 0)
-weekly_data['Sell_Signal'] = np.where(weekly_data['Predicted_Price_Change'] < 0, 1, 0)
 weekly_data['Signal'] = weekly_data['Buy_Signal'] - weekly_data['Sell_Signal']
 weekly_data['Strategy_Return'] = weekly_data['Signal'].shift(1) * weekly_data['Close'].pct_change()
+
+# 處理缺失值
+weekly_data.dropna(inplace=True)
+
+# 評估模型
+accuracy = None  # 因為不再使用機器學習模型
 
 # 計算累積收益
 cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
