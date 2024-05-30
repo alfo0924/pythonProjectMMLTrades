@@ -8,12 +8,15 @@ import plotly.graph_objects as go
 
 # 下載黃金歷史數據
 data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
-data = data[['Close']]
 
-# 生成特徵和標籤
+# 生成交易信號和策略收益率
 data['Return'] = data['Close'].pct_change()
 data['Direction'] = (data['Return'] > 0).astype(int)
-data = data.dropna()
+data['Signal'] = data['Direction'].diff()
+data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
+
+# 處理缺失值
+data.dropna(inplace=True)
 
 # 特徵和標籤
 X = data[['Close']]
@@ -31,29 +34,25 @@ predictions = model.predict(X_test)
 accuracy = accuracy_score(y_test, predictions)
 print(f'Accuracy: {accuracy:.2f}')
 
-# 生成交易信號
-data['Signal'] = model.predict(X)
-data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
-data = data.dropna()
-
 # 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
 buy_signals = data[data['Signal'] == 1].index
-sell_signals = data[data['Signal'] == 0].index
+sell_signals = data[data['Signal'] == -1].index
 
 # 生成交互式圖表
-fig = go.Figure()
-
-fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
-fig.add_trace(go.Scatter(x=data.index, y=cumulative_return, mode='lines', name='Strategy Cumulative Return'))
-
-fig.add_trace(go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Close'], mode='markers', name='Buy Signal',
-                         marker=dict(color='green', size=10, symbol='triangle-up')))
-fig.add_trace(go.Scatter(x=sell_signals, y=data.loc[sell_signals]['Close'], mode='markers', name='Sell Signal',
-                         marker=dict(color='red', size=10, symbol='triangle-down')))
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
+                                     name='Candlestick'),
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
+                                 marker=dict(color='green', size=10, symbol='triangle-up')),
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
+                                 marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
