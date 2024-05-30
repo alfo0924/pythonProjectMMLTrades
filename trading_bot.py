@@ -11,27 +11,29 @@ data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
 data['SMA50'] = data['Close'].rolling(window=50).mean()
 data['SMA200'] = data['Close'].rolling(window=200).mean()
 
+# 計算壓力位（SMA200）
+data['Resistance'] = data['SMA200']
+
 # 計算區間
 data['Range'] = data['High'] - data['Low']
 
-# 生成交易信號
-data['Signal'] = np.where((data['SMA50'] > data['SMA200']) & (data['Range'] >= 1.5 * data['Range'].rolling(window=50).mean()), 1, 0)
-data['Signal'] = data['Signal'].shift(1)
+# 日內波交易策略
+# 生成交易信號：只要趨勢往上就做多，前提是在壓力之上
+data['Signal'] = np.where((data['Close'] > data['Resistance']) &
+                          (data['Close'].pct_change().rolling(window=5).mean() > 0), 1, 0)
 
 # 處理缺失值
 data.dropna(inplace=True)
 
 # 計算策略收益率
 data['Return'] = data['Close'].pct_change()
-data['Strategy_Return'] = data['Signal'] * data['Return']
-
-# 計算累積收益
+data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
-# 生成交易點位
-buy_signals = data[data['Signal'] == 1].index
-sell_signals = data[data['Signal'] == 0].index
+# 生成交易點位，只顯示3筆
+buy_signals = data[data['Signal'] == 1].index[:3]
+sell_signals = data[data['Signal'] == 0].index[:3]
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -45,7 +47,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy (ICT Strategy)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='Gold Trading Strategy (Intraday Wave Trading)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
