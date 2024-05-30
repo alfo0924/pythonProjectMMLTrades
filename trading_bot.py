@@ -1,39 +1,46 @@
 import yfinance as yf
 import pandas as pd
-import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
 import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
 data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
 
-# 計算均線
-data['SMA50'] = data['Close'].rolling(window=50).mean()
-data['SMA200'] = data['Close'].rolling(window=200).mean()
-
-# 計算壓力位（SMA200）
-data['Resistance'] = data['SMA200']
-
-# 計算區間
-data['Range'] = data['High'] - data['Low']
-
-# 日內波交易策略
-# 生成交易信號：只要趨勢往上就做多，前提是在壓力之上
-data['Signal'] = np.where((data['Close'] > data['Resistance']) &
-                          (data['Close'].pct_change().rolling(window=5).mean() > 0), 1, 0)
+# 生成交易信號和策略收益率
+data['Return'] = data['Close'].pct_change()
+data['Direction'] = (data['Return'] > 0).astype(int)
+data['Signal'] = data['Direction'].diff()
+data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
 
 # 處理缺失值
 data.dropna(inplace=True)
 
-# 計算策略收益率
-data['Return'] = data['Close'].pct_change()
-data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
+# 特徵和標籤
+X = data[['Close']]
+y = data['Direction']
+
+# 分割訓練集和測試集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# 訓練模型
+model = LogisticRegression()
+model.fit(X_train, y_train)
+
+# 評估模型
+predictions = model.predict(X_test)
+accuracy = accuracy_score(y_test, predictions)
+print(f'Accuracy: {accuracy:.2f}')
+
+# 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
-# 生成交易點位，只顯示3筆
-buy_signals = data[data['Signal'] == 1].index[:3]
-sell_signals = data[data['Signal'] == 0].index[:3]
+# 生成交易點位
+buy_signals = data[data['Signal'] == 1].index
+sell_signals = data[data['Signal'] == -1].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -47,7 +54,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy (Intraday Wave Trading)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -61,12 +68,13 @@ html_content = f"""
 </head>
 <body>
     <h1>交易結果</h1>
+    <p>模型準確度: {accuracy:.2f}</p>
     <h2>累積收益</h2>
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買進點位: {buy_signals.to_list()}</li>
-        <li>賣出點位: {sell_signals.to_list()}</li>
+        <li>買進點位: {buy_signals[:3].to_list()}</li>
+        <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
