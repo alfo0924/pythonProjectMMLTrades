@@ -1,57 +1,75 @@
 import yfinance as yf
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
 data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
 
+# 將數據重新採樣為每週頻率
+weekly_data = data.resample('W').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last', 'Volume': 'sum'})
+
+# 計算移動平均線 (SMA) 作為趨勢指標
+weekly_data['SMA'] = weekly_data['Close'].rolling(window=20).mean()
+
+# 計算RSI
+def compute_RSI(data, time_window):
+    diff = data.diff(1).dropna()
+    up_chg = 0 * diff
+    down_chg = 0 * diff
+
+    up_chg[diff > 0] = diff[diff > 0]
+    down_chg[diff < 0] = -diff[diff < 0]
+
+    up_chg_avg = up_chg.rolling(time_window, min_periods=1).mean()
+    down_chg_avg = down_chg.rolling(time_window, min_periods=1).mean()
+
+    rs = up_chg_avg / down_chg_avg
+    rsi = 100 - 100 / (1 + rs)
+    return rsi
+
+weekly_data['RSI'] = compute_RSI(weekly_data['Close'], 14)
+
+# 設定壓力水平（假設為前期高點作為壓力水平）
+weekly_data['Resistance'] = weekly_data['Close'].rolling(window=50).max()
+
 # 生成交易信號和策略收益率
-data['Return'] = data['Close'].pct_change()
-data['Direction'] = (data['Return'] > 0).astype(int)
-data['Signal'] = data['Direction'].diff()
-data['Strategy_Return'] = data['Signal'].shift(1) * data['Return']
+weekly_data['Buy_Signal'] = ((weekly_data['Close'] > weekly_data['SMA']) &
+                             (weekly_data['RSI'] < 70) &
+                             (weekly_data['Close'] < weekly_data['Resistance'])).astype(int)
+
+weekly_data['Sell_Signal'] = ((weekly_data['Close'] < weekly_data['SMA']) &
+                              (weekly_data['RSI'] > 30) &
+                              (weekly_data['Close'] > weekly_data['Resistance'])).astype(int)
+
+weekly_data['Signal'] = weekly_data['Buy_Signal'] - weekly_data['Sell_Signal']
+weekly_data['Strategy_Return'] = weekly_data['Signal'].shift(1) * weekly_data['Close'].pct_change()
 
 # 處理缺失值
-data.dropna(inplace=True)
-
-# 特徵和標籤
-X = data[['Close']]
-y = data['Direction']
-
-# 分割訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# 訓練模型
-model = LogisticRegression()
-model.fit(X_train, y_train)
+weekly_data.dropna(inplace=True)
 
 # 評估模型
-predictions = model.predict(X_test)
-accuracy = accuracy_score(y_test, predictions)
-print(f'Accuracy: {accuracy:.2f}')
+accuracy = None  # 因為不再使用機器學習模型
 
 # 計算累積收益
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Signal'] == 1].index
-sell_signals = data[data['Signal'] == -1].index
+buy_signals = weekly_data[weekly_data['Signal'] == 1].index
+sell_signals = weekly_data[weekly_data['Signal'] == -1].index
 
 # 生成交互式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
@@ -68,7 +86,6 @@ html_content = f"""
 </head>
 <body>
     <h1>交易結果</h1>
-    <p>模型準確度: {accuracy:.2f}</p>
     <h2>累積收益</h2>
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
