@@ -5,7 +5,7 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2014-01-01', end='2024-05-30', interval='1d')
+data = yf.download('GC=F', start='2024-05-01', end='2024-05-31', interval='1d')
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Close'].pct_change()
