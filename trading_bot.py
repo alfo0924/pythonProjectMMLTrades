@@ -5,67 +5,39 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2024-01-01', end='2024-05-30')
+data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
+data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 計算CCI指標
-def compute_CCI(data, window=20):
-    TP = (data['High'] + data['Low'] + data['Close']) / 3
-    mean = TP.rolling(window=window).mean()
-    std = TP.rolling(window=window).std()
-    CCI = (TP - mean) / (0.015 * std)
-    return CCI
-
-data['CCI'] = compute_CCI(data)
-
-# 計算MACD指標
-def compute_MACD(data, short_window=12, long_window=26):
-    short_ema = data['Close'].ewm(span=short_window, min_periods=1, adjust=False).mean()
-    long_ema = data['Close'].ewm(span=long_window, min_periods=1, adjust=False).mean()
-
-    macd = short_ema - long_ema
-    signal_line = macd.ewm(span=9, min_periods=1, adjust=False).mean()
-
-    return macd, signal_line
-
-data['MACD'], data['Signal_Line'] = compute_MACD(data)
-
-# 生成交易信號
-data['Buy_Signal'] = ((data['MACD'] > 0) &
-                      (data['MACD'].diff() > 0) &
-                      (data['CCI'] > 100) &
-                      (data['Close'].diff() > 0)).astype(int)
-
-data['Sell_Signal'] = ((data['MACD'] < 0) &
-                       (data['MACD'].diff() < 0) &
-                       (data['CCI'] < -100) &
-                       (data['Close'].diff() < 0)).astype(int)
-
 # 初始化持倉
 data['Position'] = 0
 
+# 設定交易條件
 for i in range(1, len(data)):
-    if data['Buy_Signal'].iloc[i] == 1 and data['Position'].iloc[i-1] == 0:
+    if data['Close'].iloc[i] > data['SMA_120'].iloc[i] and data['Close'].iloc[i] > data['Close'].iloc[i - 1] * 1.005:
         data.at[data.index[i], 'Position'] = 1
-    elif data['Sell_Signal'].iloc[i] == 1 and data['Position'].iloc[i-1] == 1:
-        data.at[data.index[i], 'Position'] = 0
-    else:
-        data.at[data.index[i], 'Position'] = data['Position'].iloc[i-1]
+    elif (data['Close'].iloc[i] < data['SMA_120'].iloc[i] and
+          data['Close'].iloc[i] < data['SMA_5'].iloc[i] and
+          data['Close'].iloc[i] < data['SMA_20'].iloc[i]):
+        if data['Position'].iloc[i - 1] == 1 and data['Close'].iloc[i] > data['Close'].iloc[i - 1] * 1.005:
+            data.at[data.index[i], 'Position'] = 0
+        else:
+            data.at[data.index[i], 'Position'] = -1
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Position'] * data['Close'].pct_change()
+data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Buy_Signal'] == 1].index
-sell_signals = data[data['Sell_Signal'] == 1].index
+buy_signals = data[data['Position'] == 1].index
+sell_signals = data[data['Position'] == -1].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -116,3 +88,7 @@ with open("trading_result.html", "w", encoding="utf-8") as file:
 
 # 打開瀏覽器
 webbrowser.open("trading_result.html")
+
+
+
+
