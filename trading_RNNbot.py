@@ -10,33 +10,33 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
 from sklearn.model_selection import train_test_split
 
-# 下载比特币历史数据
+# 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
 
-# 计算移动平均线 (SMA) 作为趋势指标
+# 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持仓
+# 初始化持倉
 data['Position'] = 0
 
-# 将前一天的价格加入作为特征
+# 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 准备训练数据
+# 準備訓練數據
 X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改标签，不再使用-1，1
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
 
-# 由于循环神经网络需要 3D 的输入 (samples, time steps, features)
-# 我们需要重塑数据
+# 由於循環神經網絡需要 3D 的輸入 (samples, time steps, features)
+# 我們需要重塑數據
 X_train = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
 X_test = np.reshape(X_test.values, (X_test.shape[0], 1, X_test.shape[1]))
 
-# 建立循环神经网络模型
+# 建立循環神經網絡模型
 model = Sequential([
     LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
     Dropout(0.2),
@@ -49,31 +49,31 @@ model = Sequential([
 
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# 训练模型
+# 訓練模型
 model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
 
-# 在测试数据上进行预测
+# 在測試數據上進行預測
 pred_proba = model.predict(X_test)
 pred = (pred_proba > 0.5).astype(int).reshape(-1)
 
-# 将预测转换为 DataFrame
+# 將預測轉換為 DataFrame
 pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
 
-# 将预测值分配到 'Position' 列
+# 將預測值分配到 'Position' 列
 data['Position'] = 0  # 重新初始化
 data.loc[pred_df.index, 'Position'] = pred_df['Position']
 
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
-# 计算累积收益
+# 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
-# 生成交易点位
+# 生成交易點位
 buy_signals = data[data['Position'] == 1].index
 sell_signals = data[data['Position'] == 0].index
 
-# 生成交互式图表
+# 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],
@@ -87,26 +87,26 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
 
 fig.update_layout(title='Gold Trading Strategy (RNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
-# 生成HTML内容
+# 生成HTML內容
 html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>交易结果</title>
+    <title>交易結果</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>交易结果</h1>
-    <h2>累积收益</h2>
+    <h1>交易結果</h1>
+    <h2>累積收益</h2>
     <p>{final_cumulative_return:.2f}</p>
-    <h2>交易点位</h2>
+    <h2>交易點位</h2>
     <ul>
-        <li>买入点位: {buy_signals[:3].to_list()}</li>
-        <li>卖出点位: {sell_signals[:3].to_list()}</li>
+        <li>買入點位: {buy_signals[:3].to_list()}</li>
+        <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
-    <h2>交易图表</h2>
+    <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
     <script>
         var figure = {fig.to_json()};
@@ -116,9 +116,9 @@ html_content = f"""
 </html>
 """
 
-# 写入HTML文件
+# 寫入HTML文件
 with open("trading_RNN_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
-# 打开浏览器
+# 打開瀏覽器
 webbrowser.open("trading_RNN_result.html")
