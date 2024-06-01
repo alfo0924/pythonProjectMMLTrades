@@ -1,3 +1,4 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -48,13 +49,15 @@ model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy']
 # 訓練模型
 model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
 
+
 # 預測交易信號
 pred_proba = model.predict(X_test)
 pred = (pred_proba > 0.5).astype(int).reshape(-1)
 
 # 計算策略收益率
 data['Position'] = 0  # 重新初始化持倉
-data.loc[X_test[:, 0].index, 'Position'] = pred  # 將預測值設定為持倉
+data.loc[data.iloc[-len(pred):].index, 'Position'] = pred  # 將預測值設定為持倉
+
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
@@ -114,3 +117,5 @@ with open("trading_LSTM_result.html", "w", encoding="utf-8") as file:
 
 # 打開瀏覽器
 webbrowser.open("trading_LSTM_result.html")
+
+
