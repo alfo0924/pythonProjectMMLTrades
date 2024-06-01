@@ -5,30 +5,22 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
+data = yf.download('GC=F', start='2024-01-01', end='2024-05-30')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 計算KD指標
-def compute_KD(data, window=9):
-    high = data['High']
-    low = data['Low']
-    close = data['Close']
+# 計算CCI指標
+def compute_CCI(data, window=20):
+    TP = (data['High'] + data['Low'] + data['Close']) / 3
+    mean = TP.rolling(window=window).mean()
+    std = TP.rolling(window=window).std()
+    CCI = (TP - mean) / (0.015 * std)
+    return CCI
 
-    low_min = low.rolling(window=window, min_periods=1).min()
-    high_max = high.rolling(window=window, min_periods=1).max()
-
-    rsv = (close - low_min) / (high_max - low_min) * 100
-
-    k_series = rsv.ewm(com=2).mean()
-    d_series = k_series.ewm(com=2).mean()
-
-    return k_series, d_series
-
-data['K'], data['D'] = compute_KD(data)
+data['CCI'] = compute_CCI(data)
 
 # 計算MACD指標
 def compute_MACD(data, short_window=12, long_window=26):
@@ -42,25 +34,19 @@ def compute_MACD(data, short_window=12, long_window=26):
 
 data['MACD'], data['Signal_Line'] = compute_MACD(data)
 
-# 計算交易量
-data['Volume_MA'] = data['Volume'].rolling(window=20).mean()
-
 # 生成交易信號
-data['Buy_Signal'] = ((data['Close'] < data['SMA_120']) &
-                      (data['K'] < 20) &
-                      (data['MACD'] < data['Signal_Line']) &
-                      (data['Volume'] > data['Volume_MA'])).astype(int)
+data['Buy_Signal'] = ((data['MACD'] > 0) &
+                      (data['MACD'].diff() > 0) &
+                      (data['CCI'] > 100) &
+                      (data['Close'].diff() > 0)).astype(int)
 
-data['Sell_Signal'] = ((data['K'] > data['D']) &
-                       (data['MACD'] > data['Signal_Line']) &
-                       ((data['Close'] < data['SMA_20']) | (data['Close'] < data['SMA_60']))).astype(int)
+data['Sell_Signal'] = ((data['MACD'] < 0) &
+                       (data['MACD'].diff() < 0) &
+                       (data['CCI'] < -100) &
+                       (data['Close'].diff() < 0)).astype(int)
 
 # 初始化持倉
 data['Position'] = 0
-
-# 設定停利停損
-take_profit_pct = 0.015  # 1.5%
-stop_loss_pct = 0.01  # 1%
 
 for i in range(1, len(data)):
     if data['Buy_Signal'].iloc[i] == 1 and data['Position'].iloc[i-1] == 0:
