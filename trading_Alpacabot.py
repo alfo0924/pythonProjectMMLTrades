@@ -1,3 +1,6 @@
+
+
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -6,6 +9,15 @@ import plotly.graph_objects as go
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
+import alpaca_trade_api as tradeapi
+
+# Alpaca API設置
+API_KEY = 'PKMDUVCIDRSCG1EJMYJM'
+API_SECRET = '2tHAOcRI3tjXw95cPbheq5sHfEMkfAgKE9s1uZ0Z'
+APCA_API_BASE_URL = 'https://paper-api.alpaca.markets'
+
+
+api = tradeapi.REST(API_KEY, API_SECRET, APCA_API_BASE_URL, api_version='v2')
 
 # 下載黃金歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
@@ -32,6 +44,48 @@ model.fit(X, y)
 pred = model.predict(X)
 data['Position'] = pd.Series(pred, index=X.index)
 
+# Alpaca下單函數
+def submit_order(position, symbol):
+    if position == 1:
+        # Check buying power
+        account = api.get_account()
+        buying_power = float(account.buying_power)
+        asset_price = float(data['Close'].iloc[-1])  # Assuming you're using the latest closing price for the asset
+        if buying_power >= asset_price:
+            api.submit_order(
+                symbol=symbol,
+                qty=1,
+                side='buy',
+                type='market',
+                time_in_force='gtc'
+            )
+        else:
+            print("Insufficient buying power to place buy order.")
+    elif position == -1:
+        # Check asset quantity to sell
+        positions = api.list_positions()
+        existing_positions = {pos.symbol: pos for pos in positions}
+        if symbol in existing_positions:
+            asset_qty = float(existing_positions[symbol].qty)
+
+            if asset_qty >= 1:
+                api.submit_order(
+                    symbol=symbol,
+                    qty=1,
+                    side='sell',
+                    type='market',
+                    time_in_force='gtc'
+                )
+            else:
+                print("Insufficient asset quantity to place sell order.")
+        else:
+            print(f"No existing position for {symbol}.")
+
+
+# 執行交易
+for i in range(len(data)):
+    submit_order(data['Position'].iloc[i], 'BTCUSD')
+
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
@@ -55,7 +109,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy (Random Forest)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD Trading Strategy (Random Forest)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -90,5 +144,6 @@ html_content = f"""
 with open("trading_RF_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
-# 打開瀏覽器
-webbrowser.open("trading_RF_result.html")
+# 打開瀏覽器並導航到Alpaca模擬交易結果的官網
+webbrowser.open("https://app.alpaca.markets/paper/dashboard/overview")
+
