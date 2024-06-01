@@ -5,62 +5,95 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
-data = yf.download('GC=F', start='2024-05-01', end='2024-05-31', interval='1d')
+data = yf.download('GC=F', start='2019-01-01', end='2024-05-30')
+
+# 計算移動平均線 (SMA) 作為趨勢指標
+data['SMA_20'] = data['Close'].rolling(window=20).mean()
+data['SMA_60'] = data['Close'].rolling(window=60).mean()
+data['SMA_120'] = data['Close'].rolling(window=120).mean()
+
+# 計算KD指標
+def compute_KD(data, window=9):
+    high = data['High']
+    low = data['Low']
+    close = data['Close']
+
+    low_min = low.rolling(window=window, min_periods=1).min()
+    high_max = high.rolling(window=window, min_periods=1).max()
+
+    rsv = (close - low_min) / (high_max - low_min) * 100
+
+    k_series = rsv.ewm(com=2).mean()
+    d_series = k_series.ewm(com=2).mean()
+
+    return k_series, d_series
+
+data['K'], data['D'] = compute_KD(data)
+
+# 計算MACD指標
+def compute_MACD(data, short_window=12, long_window=26):
+    short_ema = data['Close'].ewm(span=short_window, min_periods=1, adjust=False).mean()
+    long_ema = data['Close'].ewm(span=long_window, min_periods=1, adjust=False).mean()
+
+    macd = short_ema - long_ema
+    signal_line = macd.ewm(span=9, min_periods=1, adjust=False).mean()
+
+    return macd, signal_line
+
+data['MACD'], data['Signal_Line'] = compute_MACD(data)
+
+# 計算交易量
+data['Volume_MA'] = data['Volume'].rolling(window=20).mean()
+
+# 生成交易信號
+data['Buy_Signal'] = ((data['Close'] < data['SMA_120']) &
+                      (data['K'] < 20) &
+                      (data['MACD'] < data['Signal_Line']) &
+                      (data['Volume'] > data['Volume_MA'])).astype(int)
+
+data['Sell_Signal'] = ((data['K'] > data['D']) &
+                       (data['MACD'] > data['Signal_Line']) &
+                       ((data['Close'] < data['SMA_20']) | (data['Close'] < data['SMA_60']))).astype(int)
+
+# 初始化持倉
+data['Position'] = 0
+
+# 設定停利停損
+take_profit_pct = 0.015  # 1.5%
+stop_loss_pct = 0.01  # 1%
+
+for i in range(1, len(data)):
+    if data['Buy_Signal'].iloc[i] == 1 and data['Position'].iloc[i-1] == 0:
+        data.at[data.index[i], 'Position'] = 1
+    elif data['Sell_Signal'].iloc[i] == 1 and data['Position'].iloc[i-1] == 1:
+        data.at[data.index[i], 'Position'] = 0
+    else:
+        data.at[data.index[i], 'Position'] = data['Position'].iloc[i-1]
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Close'].pct_change()
+data['Strategy_Return'] = data['Position'] * data['Close'].pct_change()
 
-# 處理缺失值
-data.dropna(inplace=True)
+# 累積收益計算
+cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+final_cumulative_return = cumulative_return.iloc[-1]
 
-# 計算RSI
-def compute_RSI(data, time_window):
-    diff = data.diff(1)
-    up_chg = diff.where(diff > 0, 0)
-    down_chg = -diff.where(diff < 0, 0)
-
-    up_chg_avg = up_chg.rolling(time_window).mean()
-    down_chg_avg = down_chg.rolling(time_window).mean()
-
-    rs = up_chg_avg / down_chg_avg
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
-
-data['RSI'] = compute_RSI(data['Close'], 14)
-
-# 設定壓力水平（假設為前期高點作為壓力水平）
-data['Resistance'] = data['Close'].rolling(window=50).max()
+# 生成交易點位
+buy_signals = data[data['Buy_Signal'] == 1].index
+sell_signals = data[data['Sell_Signal'] == 1].index
 
 # 生成交互式圖表
-fig = go.Figure(data=[
-    go.Candlestick(x=data.index,
-                   open=data['Open'],
-                   high=data['High'],
-                   low=data['Low'],
-                   close=data['Close'],
-                   name='Candlestick')
-])
-# 生成交易信号
-data['SMA_50'] = data['Close'].rolling(window=50).mean()  # 计算50日简单移动平均线
-data['SMA_200'] = data['Close'].rolling(window=200).mean()  # 计算200日简单移动平均线
-
-# 当50日SMA上穿200日SMA时产生买入信号，当50日SMA下穿200日SMA时产生卖出信号
-data['Signal'] = np.where(data['SMA_50'] > data['SMA_200'], 1, -1)
-
-
-# 加入交易信號
-buy_signals = data[data['Signal'] == 1].index
-sell_signals = data[data['Signal'] == -1].index
-
-fig.add_trace(go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
-                         marker=dict(color='green', size=10, symbol='triangle-up')))
-fig.add_trace(go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
-                         marker=dict(color='red', size=10, symbol='triangle-down')))
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
+                                     name='Candlestick'),
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
+                                 marker=dict(color='green', size=10, symbol='triangle-up')),
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
+                                 marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
-
-# Calculate cumulative return
-final_cumulative_return = (1 + data['Strategy_Return']).cumprod()[-1] - 1
 
 # 生成HTML內容
 html_content = f"""
