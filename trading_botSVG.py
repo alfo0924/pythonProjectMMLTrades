@@ -23,13 +23,14 @@ data['Position'] = 0
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 訓練SVM模型
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
+X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
 model = make_pipeline(StandardScaler(), SVC(C=1, kernel='rbf', gamma='auto'))
-model.fit(X.dropna(), y[:-1])
+model.fit(X, y)
 
 # 預測交易信號
-data['Position'] = model.predict(X)
+pred = model.predict(X)
+data['Position'] = pd.Series(pred, index=X.index)
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
@@ -86,8 +87,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_result.html", "w", encoding="utf-8") as file:
+with open("trading_SVGresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_result.html")
+webbrowser.open("trading_SVGresult.html")
