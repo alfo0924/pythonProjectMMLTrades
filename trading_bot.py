@@ -3,14 +3,11 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 
-# 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
+# 下載比特幣歷史數據
+data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
+# 計算移動平均線
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
@@ -19,20 +16,29 @@ data['SMA_120'] = data['Close'].rolling(window=120).mean()
 # 初始化持倉
 data['Position'] = 0
 
-# 將前一天的價格加入作為特徵
+# 确定交易信号
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 訓練SVM模型
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
-model = make_pipeline(StandardScaler(), SVC(C=1, kernel='rbf', gamma='auto'))
-model.fit(X, y)
+# 生成交易信号
+data['Buy_Signal'] = np.where(
+    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
+    1, 0
+)
+data['Sell_Signal'] = np.where(
+    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
+    1, 0
+)
 
-# 預測交易信號
-pred = model.predict(X)
-data['Position'] = pd.Series(pred, index=X.index)
+# 模擬交易
+for i in range(1, len(data)):
+    if data['Buy_Signal'].iloc[i] == 1:
+        data['Position'].iloc[i] = 1
+    elif data['Sell_Signal'].iloc[i] == 1:
+        data['Position'].iloc[i] = 0
+    else:
+        data['Position'].iloc[i] = data['Position'].iloc[i-1]
 
-# 計算策略收益率
+# 計算策略收益
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
@@ -40,8 +46,8 @@ cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+buy_signals = data[data['Buy_Signal'] == 1].index
+sell_signals = data[data['Sell_Signal'] == 1].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -55,7 +61,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD Trading Strategy (SVM)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD Trading Strategy (Simple Moving Average)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -87,8 +93,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVGresult.html", "w", encoding="utf-8") as file:
+with open("trading_CNNresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVGresult.html")
+webbrowser.open("trading_CNNresult.html")

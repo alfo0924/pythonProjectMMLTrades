@@ -3,17 +3,11 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
-from sklearn.model_selection import train_test_split
 
-# 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
+# 下載比特幣歷史數據
+data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
+# 計算移動平均線
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
@@ -22,45 +16,29 @@ data['SMA_120'] = data['Close'].rolling(window=120).mean()
 # 初始化持倉
 data['Position'] = 0
 
-# 將前一天的價格加入作為特徵
+# 确定交易信号
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 訓練卷積神經網絡模型
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改标签，不再使用-1，1
+# 生成交易信号
+data['Buy_Signal'] = np.where(
+    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
+    1, 0
+)
+data['Sell_Signal'] = np.where(
+    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
+    1, 0
+)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
+# 模擬交易
+for i in range(1, len(data)):
+    if data['Buy_Signal'].iloc[i] == 1:
+        data['Position'].iloc[i] = 1
+    elif data['Sell_Signal'].iloc[i] == 1:
+        data['Position'].iloc[i] = 0
+    else:
+        data['Position'].iloc[i] = data['Position'].iloc[i-1]
 
-# 卷積神經網絡需要 3D 的輸入 (samples, time steps, features)
-X_train = np.reshape(X_train.values, (X_train.shape[0], X_train.shape[1], 1))
-X_test = np.reshape(X_test.values, (X_test.shape[0], X_test.shape[1], 1))
-
-# 建立卷積神經網絡模型
-model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train.shape[1], 1)),
-    MaxPooling1D(pool_size=2),
-    Flatten(),
-    Dense(64, activation='relu'),
-    Dropout(0.5),
-    Dense(1, activation='sigmoid')
-])
-
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-# 訓練模型
-model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
-
-# Predict on test data
-pred_proba = model.predict(X_test)
-pred = (pred_proba > 0.5).astype(int).reshape(-1)
-
-# Convert predictions to DataFrame
-pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
-
-# Assign predictions to the 'Position' column
-data['Position'] = 0  # reinitialize
-data.loc[pred_df.index, 'Position'] = pred_df['Position']
-
+# 計算策略收益
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
@@ -68,8 +46,8 @@ cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == 0].index
+buy_signals = data[data['Buy_Signal'] == 1].index
+sell_signals = data[data['Sell_Signal'] == 1].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -83,7 +61,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy (CNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD Trading Strategy (CNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -115,8 +93,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNN_result.html", "w", encoding="utf-8") as file:
+with open("trading_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNN_result.html")
+webbrowser.open("trading_result.html")

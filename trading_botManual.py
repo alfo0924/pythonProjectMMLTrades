@@ -5,7 +5,7 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
+data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -51,7 +51,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
