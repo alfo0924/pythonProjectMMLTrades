@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
+data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -79,7 +79,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (隨機森林 RF)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科2454 交易策略 (隨機森林 RF)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -111,8 +111,9 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RFresult.html", "w", encoding="utf-8") as file:
+with open("trading_RF2454result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RFresult.html")
+webbrowser.open("trading_RF2454result.html")
+
