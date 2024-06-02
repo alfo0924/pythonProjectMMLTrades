@@ -73,24 +73,24 @@ final_cumulative_return = cumulative_return.iloc[-1]
 buy_signals = data[data['Position'] == 1].index
 sell_signals = data[data['Position'] == 0].index
 
-# 生成交互式圖表
+# 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD Trading Strategy (RNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='Gold Trading Strategy (RNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -117,8 +117,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RNN_result.html", "w", encoding="utf-8") as file:
+with open("trading_RNNresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RNN_result.html")
+webbrowser.open("trading_RNNresult.html")

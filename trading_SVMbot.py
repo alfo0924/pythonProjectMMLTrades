@@ -22,6 +22,25 @@ data['Position'] = 0
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
+# 根據策略生成交易信號
+data['Buy_Signal'] = ((data['Close'] > data['SMA_120']) &
+                      (data['Close'] > data['Previous_Close'] * 1.005)).astype(int)
+
+data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
+                       (data['Close'] < data['SMA_5']) &
+                       (data['Close'] < data['SMA_20'])).astype(int)
+
+# 初始化持倉狀態
+position = 0
+
+# 生成交易信號
+for i in range(len(data)):
+    if data['Buy_Signal'].iloc[i] == 1:
+        position = 1
+    elif data['Sell_Signal'].iloc[i] == 1:
+        position = 0
+    data['Position'].iloc[i] = position
+
 # 訓練SVM模型
 X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
 y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
@@ -60,7 +79,7 @@ fig.update_layout(title='BTC-USD Trading Strategy (SVM)', xaxis_title='Date', ya
 # 生成HTML內容
 html_content = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
