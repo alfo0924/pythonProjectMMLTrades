@@ -1,6 +1,5 @@
 
 
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -15,7 +14,6 @@ import alpaca_trade_api as tradeapi
 API_KEY = 'PKMDUVCIDRSCG1EJMYJM'
 API_SECRET = '2tHAOcRI3tjXw95cPbheq5sHfEMkfAgKE9s1uZ0Z'
 APCA_API_BASE_URL = 'https://paper-api.alpaca.markets'
-
 
 api = tradeapi.REST(API_KEY, API_SECRET, APCA_API_BASE_URL, api_version='v2')
 
@@ -40,35 +38,54 @@ y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
 model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 model.fit(X, y)
 
-# 預測交易信號
-pred = model.predict(X)
-data['Position'] = pd.Series(pred, index=X.index)
+# Define the symbol you're interested in trading
+symbol = 'BTCUSD'
 
-# Alpaca下單函數
-def submit_order(position, symbol):
-    if position == 1:
-        # Check buying power
-        account = api.get_account()
-        buying_power = float(account.buying_power)
-        asset_price = float(data['Close'].iloc[-1])  # Assuming you're using the latest closing price for the asset
-        if buying_power >= asset_price:
-            api.submit_order(
-                symbol=symbol,
-                qty=1,
-                side='buy',
-                type='market',
-                time_in_force='gtc'
-            )
-        else:
-            print("Insufficient buying power to place buy order.")
-    elif position == -1:
-        # Check asset quantity to sell
-        positions = api.list_positions()
-        existing_positions = {pos.symbol: pos for pos in positions}
-        if symbol in existing_positions:
-            asset_qty = float(existing_positions[symbol].qty)
+# Get account information
+account = api.get_account()
+buying_power = float(account.buying_power)
 
-            if asset_qty >= 1:
+# Get the current price of the asset
+asset_price = data['Close'].iloc[-1]
+
+# Calculate cumulative return based on trading positions
+data['Returns'] = data['Close'].pct_change().shift(-1) * data['Position']
+cumulative_return = (data['Returns'] + 1).cumprod() - 1
+final_cumulative_return = cumulative_return.iloc[-1]
+
+
+# Store buy and sell signals
+data['Buy_Signal'] = np.where(data['Position'] == 1, data['Close'], np.nan)
+data['Sell_Signal'] = np.where(data['Position'] == -1, data['Close'], np.nan)
+
+# Get the indices of buy and sell signals
+buy_signals = data[data['Position'] == 1].index.tolist()[:3]
+sell_signals = data[data['Position'] == -1].index.tolist()[:3]
+
+
+# Check buying power before placing buy order
+if buying_power >= asset_price:
+    # Predict trading signals
+    pred = model.predict(X)
+    data['Position'] = pd.Series(pred, index=X.index)
+
+    # Initialize variables to track order status
+    last_position = 0
+
+    # Iterate through each trading signal
+    for index, position in data['Position'].iteritems():
+        # Check if the position has changed
+        if position != last_position:
+            if position == 1:  # Buy signal
+                api.submit_order(
+                    symbol=symbol,
+                    qty=1,
+                    side='buy',
+                    type='market',
+                    time_in_force='gtc'
+                )
+                print(f"Bought 1 unit of {symbol} at market price.")
+            elif position == -1:  # Sell signal
                 api.submit_order(
                     symbol=symbol,
                     qty=1,
@@ -76,42 +93,25 @@ def submit_order(position, symbol):
                     type='market',
                     time_in_force='gtc'
                 )
-            else:
-                print("Insufficient asset quantity to place sell order.")
-        else:
-            print(f"No existing position for {symbol}.")
+                print(f"Sold 1 unit of {symbol} at market price.")
+            last_position = position
 
 
-# 執行交易
-for i in range(len(data)):
-    submit_order(data['Position'].iloc[i], 'BTCUSD')
 
-# 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+# Generate the Plotly figure
+fig = go.Figure()
 
-# 累積收益計算
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
-final_cumulative_return = cumulative_return.iloc[-1]
+# Add traces
+fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
+fig.add_trace(go.Scatter(x=data.index, y=data['SMA_5'], mode='lines', name='SMA_5'))
+fig.add_trace(go.Scatter(x=data.index, y=data['SMA_20'], mode='lines', name='SMA_20'))
+fig.add_trace(go.Scatter(x=data.index, y=data['SMA_60'], mode='lines', name='SMA_60'))
+fig.add_trace(go.Scatter(x=data.index, y=data['SMA_120'], mode='lines', name='SMA_120'))
 
-# 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+# Update layout
+fig.update_layout(title='Trading Signals', xaxis_title='Date', yaxis_title='Price')
 
-# 生成交互式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
-                                     name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
-                                 marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
-                                 marker=dict(color='red', size=10, symbol='triangle-down'))])
-
-fig.update_layout(title='BTC-USD Trading Strategy (Random Forest)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
-
-# 生成HTML內容
+# Generate HTML content with the Plotly chart
 html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -127,8 +127,8 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買進點位: {buy_signals[:3].to_list()}</li>
-        <li>賣出點位: {sell_signals[:3].to_list()}</li>
+        <li>買進點位: {buy_signals[:3]}</li>
+        <li>賣出點位: {sell_signals[:3]}</li>
     </ul>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
@@ -146,4 +146,3 @@ with open("trading_RF_result.html", "w", encoding="utf-8") as file:
 
 # 打開瀏覽器並導航到Alpaca模擬交易結果的官網
 webbrowser.open("https://app.alpaca.markets/paper/dashboard/overview")
-
