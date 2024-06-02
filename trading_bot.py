@@ -1,24 +1,15 @@
 
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-import alpaca_trade_api as tradeapi
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense, Dropout
 
-# Alpaca API設置
-API_KEY = 'PKMDUVCIDRSCG1EJMYJM'
-API_SECRET = '2tHAOcRI3tjXw95cPbheq5sHfEMkfAgKE9s1uZ0Z'
-APCA_API_BASE_URL = 'https://paper-api.alpaca.markets'
-
-api = tradeapi.REST(API_KEY, API_SECRET, APCA_API_BASE_URL, api_version='v2')
-
-# 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
+# 下載比特幣歷史數據
+data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -32,89 +23,72 @@ data['Position'] = 0
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 訓練Random Forest模型
+# 準備訓練數據
 X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
-model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
-model.fit(X, y)
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
 
-# Define the symbol you're interested in trading
-symbol = 'BTCUSD'
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
 
-# Get account information
-account = api.get_account()
-buying_power = float(account.buying_power)
+# 由於循環神經網絡需要 3D 的輸入 (samples, time steps, features)
+# 我們需要重塑數據
+X_train = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
+X_test = np.reshape(X_test.values, (X_test.shape[0], 1, X_test.shape[1]))
 
-# Get the current price of the asset
-asset_price = data['Close'].iloc[-1]
+# 建立循環神經網絡模型
+model = Sequential([
+    LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
+    Dropout(0.2),
+    LSTM(units=50, return_sequences=True),
+    Dropout(0.2),
+    LSTM(units=50),
+    Dropout(0.2),
+    Dense(units=1, activation='sigmoid')
+])
 
-# Calculate cumulative return based on trading positions
-data['Returns'] = data['Close'].pct_change().shift(-1) * data['Position']
-cumulative_return = (data['Returns'] + 1).cumprod() - 1
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# 訓練模型
+model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
+
+# 在測試數據上進行預測
+pred_proba = model.predict(X_test)
+pred = (pred_proba > 0.5).astype(int).reshape(-1)
+
+# 將預測轉換為 DataFrame
+pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
+
+# 將預測值分配到 'Position' 列
+data['Position'] = 0  # 重新初始化
+data.loc[pred_df.index, 'Position'] = pred_df['Position']
+
+data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+
+# 計算累積收益
+cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
+# 生成交易點位
+buy_signals = data[data['Position'] == 1].index
+sell_signals = data[data['Position'] == 0].index
 
-# Store buy and sell signals
-data['Buy_Signal'] = np.where(data['Position'] == 1, data['Close'], np.nan)
-data['Sell_Signal'] = np.where(data['Position'] == -1, data['Close'], np.nan)
+# 生成互動式圖表
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
+                                     name='Candlestick'),
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                                 marker=dict(color='green', size=10, symbol='triangle-up')),
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                                 marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-# Get the indices of buy and sell signals
-buy_signals = data[data['Position'] == 1].index.tolist()[:3]
-sell_signals = data[data['Position'] == -1].index.tolist()[:3]
+fig.update_layout(title='BTC-USD 交易策略 (遞歸神經網絡 RNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
-
-# Check buying power before placing buy order
-if buying_power >= asset_price:
-    # Predict trading signals
-    pred = model.predict(X)
-    data['Position'] = pd.Series(pred, index=X.index)
-
-    # Initialize variables to track order status
-    last_position = 0
-
-    # Iterate through each trading signal
-    for index, position in data['Position'].iteritems():
-        # Check if the position has changed
-        if position != last_position:
-            if position == 1:  # Buy signal
-                api.submit_order(
-                    symbol=symbol,
-                    qty=1,
-                    side='buy',
-                    type='market',
-                    time_in_force='gtc'
-                )
-                print(f"Bought 1 unit of {symbol} at market price.")
-            elif position == -1:  # Sell signal
-                api.submit_order(
-                    symbol=symbol,
-                    qty=1,
-                    side='sell',
-                    type='market',
-                    time_in_force='gtc'
-                )
-                print(f"Sold 1 unit of {symbol} at market price.")
-            last_position = position
-
-
-
-# Generate the Plotly figure
-fig = go.Figure()
-
-# Add traces
-fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price'))
-fig.add_trace(go.Scatter(x=data.index, y=data['SMA_5'], mode='lines', name='SMA_5'))
-fig.add_trace(go.Scatter(x=data.index, y=data['SMA_20'], mode='lines', name='SMA_20'))
-fig.add_trace(go.Scatter(x=data.index, y=data['SMA_60'], mode='lines', name='SMA_60'))
-fig.add_trace(go.Scatter(x=data.index, y=data['SMA_120'], mode='lines', name='SMA_120'))
-
-# Update layout
-fig.update_layout(title='Trading Signals', xaxis_title='Date', yaxis_title='Price')
-
-# Generate HTML content with the Plotly chart
+# 生成HTML內容
 html_content = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -127,8 +101,8 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買進點位: {buy_signals[:3]}</li>
-        <li>賣出點位: {sell_signals[:3]}</li>
+        <li>買入點位: {buy_signals[:3].to_list()}</li>
+        <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
@@ -141,8 +115,9 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RF_result.html", "w", encoding="utf-8") as file:
+with open("trading_RNNresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
-# 打開瀏覽器並導航到Alpaca模擬交易結果的官網
-webbrowser.open("https://app.alpaca.markets/paper/dashboard/overview")
+# 打開瀏覽器
+webbrowser.open("trading_RNNresult.html")
+
