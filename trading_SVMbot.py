@@ -7,8 +7,8 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-# 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-01')
+# 下載比特幣歷史數據
+data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -87,8 +87,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVGresult.html", "w", encoding="utf-8") as file:
+with open("trading_SVMresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVGresult.html")
+webbrowser.open("trading_SVMresult.html")
