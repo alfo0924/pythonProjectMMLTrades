@@ -1,3 +1,4 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -9,7 +10,7 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
 
 # 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
+data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -84,7 +85,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (CNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -121,3 +122,4 @@ with open("trading_CNNresult.html", "w", encoding="utf-8") as file:
 
 # 打開瀏覽器
 webbrowser.open("trading_CNNresult.html")
+

@@ -1,17 +1,15 @@
+
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
-import tensorflow as tf
+from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.model_selection import train_test_split
 
 # 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
+data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -85,7 +83,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='Gold Trading Strategy (RNN)', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (遞歸神經網絡 RNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -117,8 +115,9 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RNNresult.html", "w", encoding="utf-8") as file:
+with open("trading_RNN_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RNNresult.html")
+webbrowser.open("trading_RNN_result.html")
+
