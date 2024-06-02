@@ -4,8 +4,8 @@ import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 
-# 下載黃金歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2024-06-03')
+# 下載比特幣歷史數據
+data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -31,6 +31,9 @@ for i in range(1, len(data)):
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
+# 移除NaN值
+data.dropna(inplace=True)
+
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
@@ -46,17 +49,17 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='Buy Signal',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='Sell Signal',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD Trading Strategy', xaxis_title='Date', yaxis_title='Price', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 ( 移動平均線策略 ) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -69,7 +72,7 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買進點位: {buy_signals[:3].to_list()}</li>
+        <li>買入點位: {buy_signals[:3].to_list()}</li>
         <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
@@ -88,7 +91,3 @@ with open("trading_result.html", "w", encoding="utf-8") as file:
 
 # 打開瀏覽器
 webbrowser.open("trading_result.html")
-
-
-
-

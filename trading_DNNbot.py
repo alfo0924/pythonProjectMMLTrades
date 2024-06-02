@@ -138,7 +138,7 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_result.html", "w", encoding="utf-8") as file:
+with open("trading_DNNresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
