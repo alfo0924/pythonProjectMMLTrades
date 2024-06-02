@@ -1,5 +1,3 @@
-
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -88,9 +86,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVM_result.html", "w", encoding="utf-8") as file:
+with open("trading_SVMresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVM_result.html")
-
+webbrowser.open("trading_SVMresult.html")
