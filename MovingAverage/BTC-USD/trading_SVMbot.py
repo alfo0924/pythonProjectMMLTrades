@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
@@ -30,6 +33,20 @@ data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
 # 計算持倉
 data.loc[data['Buy_Signal'], 'Position'] = 1
 data.loc[data['Sell_Signal'], 'Position'] = -1
+
+# 準備訓練數據
+X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['SMA_120'], 1, -1)
+
+# 初始化支持向量機模型
+model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
+
+# 訓練模型
+model.fit(X, y)
+
+# 預測交易信號
+pred = model.predict(X)
+data['Position'] = pd.Series(pred, index=X.index)
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
