@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -17,17 +16,18 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
-
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 準備訓練數據
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
+# 每週最後一天的數據來生成交易信號
+weekly_data = data.resample('W').last().dropna()
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
+# 準備訓練數據
+X = weekly_data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
+
+# 划分訓練集和測試集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
 # 由於循環神經網絡需要 3D 的輸入 (samples, time steps, features)
 # 我們需要重塑數據
@@ -58,8 +58,11 @@ pred = (pred_proba > 0.5).astype(int).reshape(-1)
 pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
 
 # 將預測值分配到 'Position' 列
-data['Position'] = 0  # 重新初始化
-data.loc[pred_df.index, 'Position'] = pred_df['Position']
+weekly_data['Position'] = 0  # 重新初始化
+weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
+
+# 將每週的交易信號擴展到每日數據
+data['Position'] = weekly_data['Position'].reindex(data.index, method='ffill')
 
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
@@ -83,7 +86,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金GOLD  交易策略 (遞歸神經網絡 RNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (遞歸神經網絡 RNN  + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -115,9 +118,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RNNGoldresult.html", "w", encoding="utf-8") as file:
+with open("trading_RNNGOLDresult_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RNNGoldresult.html")
-
+webbrowser.open("trading_RNNGOLDresult_weekly.html")
