@@ -7,8 +7,8 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-# 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
+# 下載黃金歷史數據
+data = yf.download('2330.TW', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
@@ -22,24 +22,12 @@ data['Position'] = 0
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 移動平均線交易策略
-data['Buy_Signal'] = ((data['Close'] > data['SMA_120']) &
-                      (data['Close'].pct_change() > 0.005) &
-                      (data['Close'] > data['Previous_Close']))
-data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
-                       (data['Close'] < data['SMA_5']) &
-                       (data['Close'] < data['SMA_20']))
-
-# 計算持倉
-data.loc[data['Buy_Signal'], 'Position'] = 1
-data.loc[data['Sell_Signal'], 'Position'] = -1
-
 # 準備訓練數據
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['SMA_120'], 1, -1)
+X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
 
-# 初始化支持向量機模型
-model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
+# 初始化支持向量機 SVM 模型
+model = make_pipeline(StandardScaler(), SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42))
 
 # 訓練模型
 model.fit(X, y)
@@ -57,7 +45,7 @@ final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
 buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+sell_signals = data[data['Position'] == 0].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -71,7 +59,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電2330 交易策略 (支持向量機 SVM)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -103,8 +91,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVMresult.html", "w", encoding="utf-8") as file:
+with open("trading_SVMTSMCresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVMresult.html")
+webbrowser.open("trading_SVMTSMCresult.html")
