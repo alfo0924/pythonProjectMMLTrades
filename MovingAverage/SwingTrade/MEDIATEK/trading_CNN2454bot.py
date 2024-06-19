@@ -60,31 +60,34 @@ data['Predicted_Signal'] = np.nan
 data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
 # 計算策略收益率
-data['Strategy_Return'] = np.where((data['SMA_120'] < data['Close']) & (data['Close'].pct_change() > 0.005), 1,
-                                   np.where((data['SMA_120'] > data['Close']) & (data['SMA_5'] < data['SMA_20']), -1,
-                                            0)) * data['Close'].pct_change()
+# 調整交易週期為一周一次
+weekly_data = data.resample('W').last()
+
+weekly_data['Strategy_Return'] = np.where((weekly_data['SMA_120'] < weekly_data['Close']) & (weekly_data['Close'].pct_change() > 0.005), 1,
+                                          np.where((weekly_data['SMA_120'] > weekly_data['Close']) & (weekly_data['SMA_5'] < weekly_data['SMA_20']), -1,
+                                                   0)) * weekly_data['Close'].pct_change()
 
 # 累積收益計算
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Predicted_Signal'] == 1].index
-sell_signals = data[data['Predicted_Signal'] == 0].index
+buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
+sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='聯發科2454 交易策略 (卷積神經網絡 CNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略 (卷積神經網絡 CNN + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -116,8 +119,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNN2454result.html", "w", encoding="utf-8") as file:
+with open("trading_CNN2454result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNN2454result.html")
+webbrowser.open("trading_CNN2454result_weekly.html")
