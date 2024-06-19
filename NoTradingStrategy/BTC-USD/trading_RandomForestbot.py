@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
@@ -20,35 +20,37 @@ data['SMA_120'] = data['Close'].rolling(window=120).mean()
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 準備訓練數據
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['SMA_120'], 1, -1)
+# 刪除包含NaN值的列
+data.dropna(inplace=True)
+
+# 特徵和目標變量
+X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 初始化支持向量機模型
-model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
+# 初始化隨機森林模型
+model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
 # 訓練模型
 model.fit(X_train, y_train)
 
 # 預測交易信號
-pred = model.predict(X_test)
-data['Position'] = pd.Series(pred, index=X_test.index)
+data['Predicted_Position'] = model.predict(X)
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+data['Strategy_Return'] = data['Predicted_Position'].shift(1) * data['Close'].pct_change()
 
-# 累積收益計算
+# 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+buy_signals = data[data['Predicted_Position'] == 1].index
+sell_signals = data[data['Predicted_Position'] == -1].index
 
-# 生成交互式圖表
+# 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],
@@ -60,7 +62,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (隨機森林 RF 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -78,7 +80,7 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買入點位: {buy_signals[:3].to_list()}</li>
+        <li>買進點位: {buy_signals[:3].to_list()}</li>
         <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
@@ -92,8 +94,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVM_autonomous_result.html", "w", encoding="utf-8") as file:
+with open("trading_RF_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVM_autonomous_result.html")
+webbrowser.open("trading_RF_autonomous_result.html")

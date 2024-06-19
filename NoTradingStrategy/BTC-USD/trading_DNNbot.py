@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
@@ -17,38 +17,54 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 將前一天的價格加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
+# 移除NaN值
+data.dropna(inplace=True)
 
-# 準備訓練數據
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['SMA_120'], 1, -1)
+# 準備特徵和目標變量
+X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 初始化支持向量機模型
-model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
+# 特徵標準化
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# 構建DNN模型
+model = Sequential([
+    Dense(64, activation='relu', input_shape=(X_train_scaled.shape[1],)),
+    Dense(32, activation='relu'),
+    Dense(1, activation='sigmoid')
+])
+
+# 編譯模型
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # 訓練模型
-model.fit(X_train, y_train)
+model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
 
-# 預測交易信號
-pred = model.predict(X_test)
-data['Position'] = pd.Series(pred, index=X_test.index)
+# 使用模型進行預測
+predictions = model.predict(X_test_scaled)
+predictions_binary = (predictions > 0.5).astype(int)
+
+# 將預測結果添加到數據框中
+data['Predicted_Signal'] = np.nan
+data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+data['Strategy_Return'] = data['Predicted_Signal'] * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+buy_signals = data[data['Predicted_Signal'] == 1].index
+sell_signals = data[data['Predicted_Signal'] == 0].index
 
-# 生成交互式圖表
+# 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],
@@ -60,7 +76,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -92,8 +108,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_SVM_autonomous_result.html", "w", encoding="utf-8") as file:
+with open("trading_DNN_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_SVM_autonomous_result.html")
+webbrowser.open("trading_DNN_autonomous_result.html")
