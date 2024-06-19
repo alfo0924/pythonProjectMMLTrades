@@ -30,55 +30,50 @@ data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
                        (data['Close'] < data['SMA_5']) &
                        (data['Close'] < data['SMA_20'])).astype(int)
 
-# 初始化持倉狀態
-position = 0
+# 將日期設置為索引，方便後續每周操作
+data.set_index(pd.to_datetime(data.index), inplace=True)
 
-# 生成交易信號
-for i in range(len(data)):
-    if data['Buy_Signal'].iloc[i] == 1:
-        position = 1
-    elif data['Sell_Signal'].iloc[i] == 1:
-        position = 0
-    data['Position'].iloc[i] = position
-
-# 特徵和目標變量
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
+# 每週最後一天的收盤價作為模型輸入
+weekly_data = data.resample('W').last().dropna()
 
 # 初始化随機森林模型
 model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
+# 特徵和目標變量
+X = weekly_data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, -1)
+
 # 訓練模型
 model.fit(X, y)
 
-# 預測交易信號
+# 預測每周的交易信號
 pred = model.predict(X)
-data['Position'] = pd.Series(pred, index=X.index)
+weekly_data['Position'] = pd.Series(pred, index=X.index)
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+weekly_data['Strategy_Return'] = weekly_data['Position'].shift(1) * weekly_data['Close'].pct_change()
 
 # 計算累積收益
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+buy_signals = weekly_data[weekly_data['Position'] == 1].index
+sell_signals = weekly_data[weekly_data['Position'] == -1].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='台積電2330 交易策略 (隨機森林 RF)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (隨機森林 RF  + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -110,8 +105,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RFTSMCresult.html", "w", encoding="utf-8") as file:
+with open("trading_RF2330result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RFTSMCresult.html")
+webbrowser.open("trading_RF2330result_weekly.html")
