@@ -1,77 +1,54 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import train_test_split
 
 # 下載比特幣歷史數據
 data = yf.download('2330.TW', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線
+# 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 移除NaN值
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
+
+# 刪除包含NaN值的列
 data.dropna(inplace=True)
 
-# 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+# 特徵和目標變量
+X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 特徵標準化
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# 構建CNN模型
-model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
-    MaxPooling1D(pool_size=2),
-    Flatten(),
-    Dense(50, activation='relu'),
-    Dense(1, activation='sigmoid')
-])
-
-# 編譯模型
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-# 將數據調整為CNN模型的輸入形狀
-X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
-X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
+# 初始化隨機森林模型
+model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
+model.fit(X_train, y_train)
 
-# 使用模型進行預測
-predictions = model.predict(X_test_scaled)
-predictions_binary = (predictions > 0.5).astype(int)
-
-# 將預測結果添加到數據框中
-data['Predicted_Signal'] = np.nan
-data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+# 預測交易信號
+data['Predicted_Position'] = model.predict(X)
 
 # 計算策略收益率
-data['Strategy_Return'] = np.where((data['SMA_120'] < data['Close']) & (data['Close'].pct_change() > 0.005), 1,
-                                   np.where((data['SMA_120'] > data['Close']) & (data['SMA_5'] < data['SMA_20']), -1,
-                                            0)) * data['Close'].pct_change()
+data['Strategy_Return'] = data['Predicted_Position'].shift(1) * data['Close'].pct_change()
 
-# 累積收益計算
+# 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Predicted_Signal'] == 1].index
-sell_signals = data[data['Predicted_Signal'] == 0].index
+buy_signals = data[data['Predicted_Position'] == 1].index
+sell_signals = data[data['Predicted_Position'] == -1].index
 
 # 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -85,7 +62,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='台積電2330 交易策略 (卷積神經網絡 CNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (隨機森林 RF 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -103,7 +80,7 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買入點位: {buy_signals[:3].to_list()}</li>
+        <li>買進點位: {buy_signals[:3].to_list()}</li>
         <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
@@ -117,8 +94,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNNTSMCresult.html", "w", encoding="utf-8") as file:
+with open("trading_RF_2330_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNNTSMCresult.html")
+webbrowser.open("trading_RF_2330_autonomous_result.html")

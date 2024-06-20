@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -7,48 +6,19 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
 
 # 下載比特幣歷史數據
 data = yf.download('2330.TW', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
+# 計算移動平均線
 data['SMA_5'] = data['Close'].rolling(window=5).mean()
 data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
-
-# 將前一天的收盤價加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
-
-# 確定交易信號
-data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
-    1, 0
-)
-data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
-    1, 0
-)
-
-# 模擬交易
-for i in range(1, len(data)):
-    if data['Buy_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 1
-    elif data['Sell_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 0
-    else:
-        data['Position'].iloc[i] = data['Position'].iloc[i-1]
-
-# 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
-
-# 累積收益計算
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
-final_cumulative_return = cumulative_return.iloc[-1]
+# 移除NaN值
+data.dropna(inplace=True)
 
 # 準備特徵和目標變量
 X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
@@ -62,15 +32,21 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# 構建DNN模型
+# 構建CNN模型
 model = Sequential([
-    Dense(64, activation='relu', input_shape=(X_train_scaled.shape[1],)),
-    Dense(32, activation='relu'),
+    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
+    MaxPooling1D(pool_size=2),
+    Flatten(),
+    Dense(50, activation='relu'),
     Dense(1, activation='sigmoid')
 ])
 
 # 編譯模型
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+# 將數據調整為CNN模型的輸入形狀
+X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
+X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
 
 # 訓練模型
 model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
@@ -83,8 +59,8 @@ predictions_binary = (predictions > 0.5).astype(int)
 data['Predicted_Signal'] = np.nan
 data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
-# 計算策略收益率
-data['Strategy_Return'] = data['Predicted_Signal'] * data['Close'].pct_change()
+# 累積收益計算
+data['Strategy_Return'] = data['Close'].pct_change() * data['Predicted_Signal'].shift(1)
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
@@ -106,7 +82,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='台積電2330 交易策略 (深度神經網絡 DNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (卷積神經網絡 CNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -138,9 +114,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_DNNTSMCresult.html", "w", encoding="utf-8") as file:
+with open("trading_CNN_2330_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_DNNTSMCresult.html")
-
+webbrowser.open("trading_CNN_2330_autonomous_result.html")

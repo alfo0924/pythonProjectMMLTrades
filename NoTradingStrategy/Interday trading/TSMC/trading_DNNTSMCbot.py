@@ -4,9 +4,9 @@ import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from tensorflow.keras.layers import Dense
 
 # 下載比特幣歷史數據
 data = yf.download('2330.TW', start='2015-01-01', end='2025-06-03')
@@ -17,53 +17,25 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
+# 移除NaN值
+data.dropna(inplace=True)
 
-# 將前一天的收盤價加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
-
-# 確定交易信號
-data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
-    1, 0
-)
-data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
-    1, 0
-)
-
-# 模擬交易
-for i in range(1, len(data)):
-    if data['Buy_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 1
-    elif data['Sell_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 0
-    else:
-        data['Position'].iloc[i] = data['Position'].iloc[i-1]
-
-# 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
-
-# 准備特徵和目標變量
+# 準備特徵和目標變量
 X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
 y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 數據標準化
-scaler = MinMaxScaler()
+# 特徵標準化
+scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-# 重塑數據以符合LSTM輸入要求
-X_train_reshaped = X_train_scaled.reshape((X_train_scaled.shape[0], 1, X_train_scaled.shape[1]))
-X_test_reshaped = X_test_scaled.reshape((X_test_scaled.shape[0], 1, X_test_scaled.shape[1]))
-
-# 構建LSTM模型
+# 構建DNN模型
 model = Sequential([
-    LSTM(50, input_shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2])),
+    Dense(64, activation='relu', input_shape=(X_train_scaled.shape[1],)),
+    Dense(32, activation='relu'),
     Dense(1, activation='sigmoid')
 ])
 
@@ -71,10 +43,10 @@ model = Sequential([
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # 訓練模型
-model.fit(X_train_reshaped, y_train, epochs=10, batch_size=32, validation_data=(X_test_reshaped, y_test), verbose=0)
+model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
 
 # 使用模型進行預測
-predictions = model.predict(X_test_reshaped)
+predictions = model.predict(X_test_scaled)
 predictions_binary = (predictions > 0.5).astype(int)
 
 # 將預測結果添加到數據框中
@@ -104,7 +76,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='台積電2330 交易策略 (長短期記憶網路 LSTM)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (深度神經網絡 DNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -136,8 +108,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_LSTMTSMCresult.html", "w", encoding="utf-8") as file:
+with open("trading_DNN_2330_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_LSTMTSMCresult.html")
+webbrowser.open("trading_DNN_2330_autonomous_result.html")
