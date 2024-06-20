@@ -3,29 +3,36 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
-from sklearn.preprocessing import StandardScaler
 
 # 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
+# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
+weekly_data = data.resample('W').last()
+
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+weekly_data['SMA_5'] = weekly_data['Close'].rolling(window=5).mean()
+weekly_data['SMA_20'] = weekly_data['Close'].rolling(window=20).mean()
+weekly_data['SMA_60'] = weekly_data['Close'].rolling(window=60).mean()
+weekly_data['SMA_120'] = weekly_data['Close'].rolling(window=120).mean()
 
-# 將前一天的價格加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
+# 將前一週的收盤價加入作為特徵
+weekly_data['Previous_Close'] = weekly_data['Close'].shift(1)
 
-# 準備訓練數據
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
+# 刪除包含NaN值的列
+weekly_data.dropna(inplace=True)
+
+# 準備特徵和目標變量
+X = weekly_data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+split_index = int(len(X) * 0.8)
+X_train, X_test = X[:split_index], X[split_index:]
+y_train, y_test = y[:split_index], y[split_index:]
 
 # 對特徵進行標準化
 scaler = StandardScaler()
@@ -61,32 +68,33 @@ pred = (pred_proba > 0.5).astype(int).reshape(-1)
 pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
 
 # 將預測值分配到 'Position' 列
-data['Position'] = 0  # 重新初始化
-data.loc[pred_df.index, 'Position'] = pred_df['Position']
+weekly_data['Position'] = 0  # 重新初始化
+weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
 
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+# 計算策略收益率
+weekly_data['Strategy_Return'] = weekly_data['Position'].shift(1) * weekly_data['Close'].pct_change()
 
 # 計算累積收益
-cumulative_return = (data['Strategy_Return'] + 1).cumprod()
+cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == 0].index
+buy_signals = weekly_data[weekly_data['Position'] == 1].index
+sell_signals = weekly_data[weekly_data['Position'] == 0].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (遞歸神經網絡 RNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (遞歸神經網絡 RNN 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -118,8 +126,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RNN_GOLD_autonomous_result.html", "w", encoding="utf-8") as file:
+with open("trading_GOLD_RNN_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RNN_GOLD_autonomous_result.html")
+webbrowser.open("trading_GOLD_RNN_autonomous_weekly_result.html")
