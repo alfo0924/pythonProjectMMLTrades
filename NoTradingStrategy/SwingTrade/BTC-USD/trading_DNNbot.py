@@ -17,46 +17,12 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
-
-# 將前一天的收盤價加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
-
-# 確定交易信號
-data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
-    1, 0
-)
-data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
-    1, 0
-)
-
-# 將日期設置為索引，方便後續每周操作
-data.set_index(pd.to_datetime(data.index), inplace=True)
-
-# 模擬交易，將交易週期設置為一周一次
-weekly_data = data.resample('W').last()
-
-for i in range(1, len(weekly_data)):
-    if weekly_data['Buy_Signal'].iloc[i] == 1:
-        weekly_data['Position'].iloc[i] = 1
-    elif weekly_data['Sell_Signal'].iloc[i] == 1:
-        weekly_data['Position'].iloc[i] = 0
-    else:
-        weekly_data['Position'].iloc[i] = weekly_data['Position'].iloc[i-1]
-
-# 計算策略收益率
-weekly_data['Strategy_Return'] = weekly_data['Position'].shift(1) * weekly_data['Close'].pct_change()
-
-# 累積收益計算
-cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
-final_cumulative_return = cumulative_return.iloc[-1]
+# 移除NaN值
+data.dropna(inplace=True)
 
 # 準備特徵和目標變量
-X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
+X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -84,33 +50,33 @@ predictions = model.predict(X_test_scaled)
 predictions_binary = (predictions > 0.5).astype(int)
 
 # 將預測結果添加到數據框中
-weekly_data['Predicted_Signal'] = np.nan
-weekly_data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+data['Predicted_Signal'] = np.nan
+data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
 # 計算策略收益率
-weekly_data['Strategy_Return'] = weekly_data['Predicted_Signal'] * weekly_data['Close'].pct_change()
+data['Strategy_Return'] = data['Predicted_Signal'] * data['Close'].pct_change()
 
 # 累積收益計算
-cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
+cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
-sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
+buy_signals = data[data['Predicted_Signal'] == 1].index
+sell_signals = data[data['Predicted_Signal'] == 0].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
-                                     open=weekly_data['Open'],
-                                     high=weekly_data['High'],
-                                     low=weekly_data['Low'],
-                                     close=weekly_data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -142,8 +108,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_DNNBTCUSDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_DNN_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_DNNBTCUSDresult_weekly.html")
+webbrowser.open("trading_DNN_autonomous_result.html")
