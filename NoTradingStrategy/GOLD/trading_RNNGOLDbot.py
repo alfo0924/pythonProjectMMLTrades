@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -7,6 +6,7 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense, Dropout
+from sklearn.preprocessing import StandardScaler
 
 # 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
@@ -17,9 +17,6 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
-
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
@@ -27,16 +24,22 @@ data['Previous_Close'] = data['Close'].shift(1)
 X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
 y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, shuffle=False)
+# 划分訓練集和測試集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+
+# 對特徵進行標準化
+scaler = StandardScaler()
+X_train_scaled = scaler.fit_transform(X_train)
+X_test_scaled = scaler.transform(X_test)
 
 # 由於循環神經網絡需要 3D 的輸入 (samples, time steps, features)
 # 我們需要重塑數據
-X_train = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
-X_test = np.reshape(X_test.values, (X_test.shape[0], 1, X_test.shape[1]))
+X_train_reshaped = np.reshape(X_train_scaled, (X_train_scaled.shape[0], 1, X_train_scaled.shape[1]))
+X_test_reshaped = np.reshape(X_test_scaled, (X_test_scaled.shape[0], 1, X_test_scaled.shape[1]))
 
 # 建立循環神經網絡模型
 model = Sequential([
-    LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
+    LSTM(units=50, return_sequences=True, input_shape=(X_train_reshaped.shape[1], X_train_reshaped.shape[2])),
     Dropout(0.2),
     LSTM(units=50, return_sequences=True),
     Dropout(0.2),
@@ -48,10 +51,10 @@ model = Sequential([
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # 訓練模型
-model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
+model.fit(X_train_reshaped, y_train, epochs=50, batch_size=32, validation_data=(X_test_reshaped, y_test), verbose=0)
 
 # 在測試數據上進行預測
-pred_proba = model.predict(X_test)
+pred_proba = model.predict(X_test_reshaped)
 pred = (pred_proba > 0.5).astype(int).reshape(-1)
 
 # 將預測轉換為 DataFrame
@@ -83,7 +86,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金GOLD  交易策略 (遞歸神經網絡 RNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (遞歸神經網絡 RNN 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -115,9 +118,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RNNGoldresult.html", "w", encoding="utf-8") as file:
+with open("trading_RNN_GOLD_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RNNGoldresult.html")
-
+webbrowser.open("trading_RNN_GOLD_autonomous_result.html")
