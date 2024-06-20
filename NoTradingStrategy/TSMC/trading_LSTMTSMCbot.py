@@ -17,33 +17,8 @@ data['SMA_20'] = data['Close'].rolling(window=20).mean()
 data['SMA_60'] = data['Close'].rolling(window=60).mean()
 data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
-# 初始化持倉
-data['Position'] = 0
-
-# 將前一天的收盤價加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
-
-# 確定交易信號
-data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
-    1, 0
-)
-data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
-    1, 0
-)
-
-# 模擬交易
-for i in range(1, len(data)):
-    if data['Buy_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 1
-    elif data['Sell_Signal'].iloc[i] == 1:
-        data['Position'].iloc[i] = 0
-    else:
-        data['Position'].iloc[i] = data['Position'].iloc[i-1]
-
-# 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+# 移除NaN值
+data.dropna(inplace=True)
 
 # 准備特徵和目標變量
 X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
@@ -104,7 +79,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='台積電2330 交易策略 (長短期記憶網路 LSTM)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (LSTM 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -136,8 +111,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_LSTMTSMCresult.html", "w", encoding="utf-8") as file:
+with open("trading_LSTM_2330_autonomous_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_LSTMTSMCresult.html")
+webbrowser.open("trading_LSTM_2330_autonomous_result.html")
