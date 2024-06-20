@@ -6,15 +6,18 @@ import plotly.graph_objects as go
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
+# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
+weekly_data = data.resample('W').last()
+
 # 生成交互式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick')])
 
-fig.update_layout(title='BTC-USD 交易策略(無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -39,8 +42,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_NoTradingStrategy_result.html", "w", encoding="utf-8") as file:
+with open("trading_NoTradingStrategy_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_NoTradingStrategy_result.html")
+webbrowser.open("trading_NoTradingStrategy_weekly_result.html")

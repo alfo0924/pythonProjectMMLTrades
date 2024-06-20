@@ -3,77 +3,59 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
-
-# 移除NaN值
-data.dropna(inplace=True)
-
-# 將數據按每周重採樣，選擇每周最後一天的價格作為代表
+# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
 weekly_data = data.resample('W').last()
 
+# 計算移動平均線 (SMA) 作為趨勢指標
+weekly_data['SMA_5'] = weekly_data['Close'].rolling(window=5).mean()
+weekly_data['SMA_20'] = weekly_data['Close'].rolling(window=20).mean()
+weekly_data['SMA_60'] = weekly_data['Close'].rolling(window=60).mean()
+weekly_data['SMA_120'] = weekly_data['Close'].rolling(window=120).mean()
+
+# 將前一週的收盤價加入作為特徵
+weekly_data['Previous_Close'] = weekly_data['Close'].shift(1)
+
+# 刪除包含NaN值的列
+weekly_data.dropna(inplace=True)
+
 # 準備特徵和目標變量
-X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
+X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['SMA_120'], 1, -1)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+split_index = int(len(X) * 0.8)
+X_train, X_test = X[:split_index], X[split_index:]
+y_train, y_test = y[:split_index], y[split_index:]
 
-# 特徵標準化
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# 構建CNN模型
-model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
-    MaxPooling1D(pool_size=2),
-    Flatten(),
-    Dense(50, activation='relu'),
-    Dense(1, activation='sigmoid')
-])
-
-# 編譯模型
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-# 將數據調整為CNN模型的輸入形狀
-X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
-X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
+# 初始化支持向量機模型
+model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
 
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
+model.fit(X_train, y_train)
 
-# 使用模型進行預測
-predictions = model.predict(X_test_scaled)
-predictions_binary = (predictions > 0.5).astype(int)
+# 在測試數據上進行預測
+pred = model.predict(X_test)
+weekly_data['Position'] = pd.Series(pred, index=X_test.index)
 
-# 將預測結果添加到數據框中
-weekly_data['Predicted_Signal'] = np.nan
-weekly_data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
-
-# 累積收益計算
-weekly_data['Strategy_Return'] = weekly_data['Close'].pct_change() * weekly_data['Predicted_Signal'].shift(1)
+# 計算策略收益率
+weekly_data['Strategy_Return'] = weekly_data['Position'].shift(1) * weekly_data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
-sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
+buy_signals = weekly_data[weekly_data['Position'] == 1].index
+sell_signals = weekly_data[weekly_data['Position'] == -1].index
 
-# 生成互動式圖表
+# 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      open=weekly_data['Open'],
                                      high=weekly_data['High'],
@@ -85,7 +67,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                       go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN 自主學習 無任何自定義交易策略框架 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -117,8 +99,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNN_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
+with open("trading_SVM_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNN_autonomous_weekly_result.html")
+webbrowser.open("trading_SVM_autonomous_weekly_result.html")
