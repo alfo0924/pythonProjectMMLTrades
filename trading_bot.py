@@ -7,10 +7,10 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-# 下載比特幣歷史數據
-data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
+# 下載台積電歷史數據
+data = yf.download('2330.TW', start='2015-01-01', end='2025-06-03')
 
-# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
+# 每週重採樣，選擇每週最後一天的價格作為代表
 weekly_data = data.resample('W').last()
 
 # 計算移動平均線 (SMA) 作為趨勢指標
@@ -27,7 +27,11 @@ weekly_data.dropna(inplace=True)
 
 # 準備特徵和目標變量
 X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['SMA_120'], 1, -1)
+y = np.zeros(len(weekly_data))  # 初始化目標變數為全0，表示持平
+
+# 上漲為1，下跌為-1
+y[weekly_data['Close'].shift(-1) > weekly_data['Close']] = 1
+y[weekly_data['Close'].shift(-1) < weekly_data['Close']] = -1
 
 # 划分訓練集和測試集
 split_index = int(len(X) * 0.8)
@@ -67,7 +71,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                       go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='聯發科 2454 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='台積電 2330 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -99,8 +103,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_2454_SVM_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
+with open("trading_2330_SVM_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_2454_SVM_autonomous_weekly_result.html")
+webbrowser.open("trading_2330_SVM_autonomous_weekly_result.html")
