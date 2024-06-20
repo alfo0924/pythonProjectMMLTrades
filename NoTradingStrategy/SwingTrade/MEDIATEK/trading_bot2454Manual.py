@@ -6,15 +6,18 @@ import plotly.graph_objects as go
 # 下載比特幣歷史數據
 data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
+# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
+weekly_data = data.resample('W').last()
+
 # 生成交互式圖表
-fig = go.Figure(data=[go.Candlestick(x=data.index,
-                                     open=data['Open'],
-                                     high=data['High'],
-                                     low=data['Low'],
-                                     close=data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
+                                     open=weekly_data['Open'],
+                                     high=weekly_data['High'],
+                                     low=weekly_data['Low'],
+                                     close=weekly_data['Close'],
                                      name='Candlestick')])
 
-fig.update_layout(title='聯發科 2454 交易策略(無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -23,11 +26,11 @@ html_content = f"""
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>聯發科 2454 價格走勢</title>
+    <title>聯發科價格走勢</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>聯發科 2454 價格走勢</h1>
+    <h1>聯發科價格走勢</h1>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
     <script>
@@ -39,8 +42,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_2454_NoTradingStrategy_result.html", "w", encoding="utf-8") as file:
+with open("trading_2454_NoTradingStrategy_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_2454_NoTradingStrategy_result.html")
+webbrowser.open("trading_2454_NoTradingStrategy_weekly_result.html")

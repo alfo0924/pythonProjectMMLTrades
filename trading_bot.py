@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
-data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
+data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
 # 將數據按每週重採樣，選擇每週最後一天的價格作為代表
 weekly_data = data.resample('W').last()
@@ -67,7 +67,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                       go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -99,8 +99,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_GOLD_SVM_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
+with open("trading_2454_SVM_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_GOLD_SVM_autonomous_weekly_result.html")
+webbrowser.open("trading_2454_SVM_autonomous_weekly_result.html")
