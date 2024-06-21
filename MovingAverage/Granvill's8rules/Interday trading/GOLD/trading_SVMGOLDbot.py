@@ -3,69 +3,41 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import make_pipeline
 
-# 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
+# 下載黃金歷史數據
+data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_200'] = data['Close'].rolling(window=200).mean()
+data['SMA_5'] = data['Close'].rolling(window=5).mean()
+data['SMA_20'] = data['Close'].rolling(window=20).mean()
+data['SMA_60'] = data['Close'].rolling(window=60).mean()
+data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
 # 初始化持倉
 data['Position'] = 0
 
-# 設定交易條件
-for i in range(1, len(data)):
-    close_price = data['Close'].iloc[i]
-    sma_200 = data['SMA_200'].iloc[i]
-    sma_200_prev = data['SMA_200'].iloc[i - 1]
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
 
-    # 買進訊號
-    if (close_price > sma_200 and
-            close_price > sma_200_prev and
-            sma_200_prev < sma_200):
-        data.at[data.index[i], 'Position'] = 1
+# 準備訓練數據
+X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, 0)  # 修改標籤，不再使用-1，1
 
-    elif (close_price < sma_200 and
-          close_price > sma_200_prev and
-          sma_200_prev < sma_200):
-        data.at[data.index[i], 'Position'] = 1
+# 初始化支持向量機 SVM 模型
+model = make_pipeline(StandardScaler(), SVC(kernel='rbf', C=1.0, gamma='scale', random_state=42))
 
-    elif (close_price > sma_200 and
-          close_price < sma_200_prev and
-          sma_200_prev > sma_200):
-        data.at[data.index[i], 'Position'] = 1
+# 訓練模型
+model.fit(X, y)
 
-    elif (close_price < sma_200 and
-          close_price < sma_200_prev and
-          sma_200_prev > sma_200):
-        data.at[data.index[i], 'Position'] = 1
-
-    # 賣出訊號
-    elif (close_price < sma_200 and
-          close_price < sma_200_prev and
-          sma_200_prev > sma_200):
-        data.at[data.index[i], 'Position'] = -1
-
-    elif (close_price > sma_200 and
-          close_price < sma_200_prev and
-          sma_200_prev > sma_200):
-        data.at[data.index[i], 'Position'] = -1
-
-    elif (close_price < sma_200 and
-          close_price > sma_200_prev and
-          sma_200_prev < sma_200):
-        data.at[data.index[i], 'Position'] = -1
-
-    elif (close_price > sma_200 and
-          close_price > sma_200_prev and
-          sma_200_prev < sma_200):
-        data.at[data.index[i], 'Position'] = -1
+# 預測交易信號
+pred = model.predict(X)
+data['Position'] = pd.Series(pred, index=X.index)
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
-
-# 移除NaN值
-data.dropna(inplace=True)
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
@@ -73,7 +45,7 @@ final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
 buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == -1].index
+sell_signals = data[data['Position'] == 0].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -87,7 +59,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 ( 格蘭碧8大法則 均線:200均 交易頻率:一天多次 ) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金GOLD 交易策略 (支持向量機 SVM)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -119,8 +91,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_Granvills8rules_result.html", "w", encoding="utf-8") as file:
+with open("trading_SVMGoldresult.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_Granvills8rules_result.html")
+webbrowser.open("trading_SVMGoldresult.html")
