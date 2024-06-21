@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -13,10 +12,7 @@ from tensorflow.keras.layers import Dense
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data['Position'] = 0
@@ -26,11 +22,19 @@ data['Previous_Close'] = data['Close'].shift(1)
 
 # 確定交易信號
 data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
+    (data['Close'] > data['SMA_200']) &
+    (
+            ((data['Close'] > data['SMA_200'].shift(1)) & (data['SMA_200'] <= data['SMA_200'].shift(1))) |
+            ((data['Close'] > data['SMA_200'].shift(1)) & (data['Close'] > data['SMA_200']))
+    ),
     1, 0
 )
 data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
+    (data['Close'] < data['SMA_200']) &
+    (
+            ((data['Close'] < data['SMA_200'].shift(1)) & (data['SMA_200'] >= data['SMA_200'].shift(1))) |
+            ((data['Close'] < data['SMA_200'].shift(1)) & (data['Close'] < data['SMA_200']))
+    ),
     1, 0
 )
 
@@ -51,7 +55,7 @@ cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+X = data[['SMA_200']].values
 y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
@@ -106,7 +110,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN + 格蘭碧8大法則 均線:200均 交易頻率:一天多次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -138,8 +142,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_DNNresult.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_DNN_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_DNNresult.html")
+webbrowser.open("trading_Granvills8rules_DNN_result.html")
