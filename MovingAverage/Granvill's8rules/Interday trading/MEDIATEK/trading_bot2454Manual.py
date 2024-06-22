@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -9,25 +8,58 @@ import plotly.graph_objects as go
 data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data['Position'] = 0
 
 # 設定交易條件
 for i in range(1, len(data)):
-    if data['Close'].iloc[i] > data['SMA_120'].iloc[i] and data['Close'].iloc[i] > data['Close'].iloc[i - 1] * 1.005:
+    close_price = data['Close'].iloc[i]
+    sma_200 = data['SMA_200'].iloc[i]
+    sma_200_prev = data['SMA_200'].iloc[i - 1]
+
+    # 買進訊號
+    if (close_price > sma_200 and
+            close_price > sma_200_prev and
+            sma_200_prev < sma_200):
         data.at[data.index[i], 'Position'] = 1
-    elif (data['Close'].iloc[i] < data['SMA_120'].iloc[i] and
-          data['Close'].iloc[i] < data['SMA_5'].iloc[i] and
-          data['Close'].iloc[i] < data['SMA_20'].iloc[i]):
-        if data['Position'].iloc[i - 1] == 1 and data['Close'].iloc[i] > data['Close'].iloc[i - 1] * 1.005:
-            data.at[data.index[i], 'Position'] = 0
-        else:
-            data.at[data.index[i], 'Position'] = -1
+
+    elif (close_price < sma_200 and
+          close_price > sma_200_prev and
+          sma_200_prev < sma_200):
+        data.at[data.index[i], 'Position'] = 1
+
+    elif (close_price > sma_200 and
+          close_price < sma_200_prev and
+          sma_200_prev > sma_200):
+        data.at[data.index[i], 'Position'] = 1
+
+    elif (close_price < sma_200 and
+          close_price < sma_200_prev and
+          sma_200_prev > sma_200):
+        data.at[data.index[i], 'Position'] = 1
+
+    # 賣出訊號
+    elif (close_price < sma_200 and
+          close_price < sma_200_prev and
+          sma_200_prev > sma_200):
+        data.at[data.index[i], 'Position'] = -1
+
+    elif (close_price > sma_200 and
+          close_price < sma_200_prev and
+          sma_200_prev > sma_200):
+        data.at[data.index[i], 'Position'] = -1
+
+    elif (close_price < sma_200 and
+          close_price > sma_200_prev and
+          sma_200_prev < sma_200):
+        data.at[data.index[i], 'Position'] = -1
+
+    elif (close_price > sma_200 and
+          close_price > sma_200_prev and
+          sma_200_prev < sma_200):
+        data.at[data.index[i], 'Position'] = -1
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
@@ -55,7 +87,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='聯發科2454 交易策略 ( 移動平均線策略 ) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略 ( 格蘭碧8大法則 均線:200均 交易頻率:一天多次 ) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -87,8 +119,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_2454result.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_2454_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_2454result.html")
+webbrowser.open("trading_Granvills8rules_2454_result.html")
