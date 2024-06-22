@@ -7,29 +7,23 @@ import plotly.graph_objects as go
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+# 計算移動平均線 (SMA) 作為趨勢指標，只保留200日移動平均線
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data['Position'] = 0
 
-# 設定交易週期為一周一次
-weekly_data = data.resample('W').last()  # 取每周最後一天的價格作為代表
+# 設定交易週期為每周一次，並使用每周最後一天的價格進行交易判斷
+weekly_data = data.resample('W').last()
 
 for i in range(1, len(weekly_data)):
-    if (weekly_data['Close'].iloc[i] > weekly_data['SMA_120'].iloc[i] and
+    if (weekly_data['Close'].iloc[i] > weekly_data['SMA_200'].iloc[i] and
             weekly_data['Close'].iloc[i] > weekly_data['Close'].iloc[i - 1] * 1.005):
-        data.at[weekly_data.index[i], 'Position'] = 1
-    elif (weekly_data['Close'].iloc[i] < weekly_data['SMA_120'].iloc[i] and
-          weekly_data['Close'].iloc[i] < weekly_data['SMA_5'].iloc[i] and
-          weekly_data['Close'].iloc[i] < weekly_data['SMA_20'].iloc[i]):
-        if data['Position'].iloc[i - 1] == 1 and weekly_data['Close'].iloc[i] > weekly_data['Close'].iloc[i - 1] * 1.005:
-            data.at[weekly_data.index[i], 'Position'] = 0
-        else:
-            data.at[weekly_data.index[i], 'Position'] = -1
+        data.at[weekly_data.index[i], 'Position'] = 1  # 買入訊號
+    elif (weekly_data['Close'].iloc[i] < weekly_data['SMA_200'].iloc[i] and
+          weekly_data['Close'].iloc[i] < weekly_data['SMA_200'].iloc[i - 1] and
+          weekly_data['Close'].iloc[i] < weekly_data['Close'].iloc[i - 1]):
+        data.at[weekly_data.index[i], 'Position'] = -1  # 賣出訊號
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
@@ -57,7 +51,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -89,8 +83,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_BTCUSDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_BTCUSD_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_BTCUSDresult_weekly.html")
+webbrowser.open("trading_Granvills8rules_BTCUSD_result_weekly.html")

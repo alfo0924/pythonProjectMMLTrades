@@ -11,18 +11,24 @@ from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
+# 將數據轉換為DatetimeIndex
+data.index = pd.to_datetime(data.index)
+
+# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
+weekly_data = data.resample('W').last()
+
 # 計算移動平均線
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+weekly_data['SMA_5'] = weekly_data['Close'].rolling(window=5).mean()
+weekly_data['SMA_20'] = weekly_data['Close'].rolling(window=20).mean()
+weekly_data['SMA_60'] = weekly_data['Close'].rolling(window=60).mean()
+weekly_data['SMA_120'] = weekly_data['Close'].rolling(window=120).mean()
 
 # 移除NaN值
-data.dropna(inplace=True)
+weekly_data.dropna(inplace=True)
 
 # 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -56,24 +62,35 @@ predictions = model.predict(X_test_scaled)
 predictions_binary = (predictions > 0.5).astype(int)
 
 # 將預測結果添加到數據框中
-data['Predicted_Signal'] = np.nan
-data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+weekly_data['Predicted_Signal'] = np.nan
+weekly_data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+
+# 定義交易信號函數（修改後避免使用SMA_200）
+def generate_signals(data):
+    signals = np.zeros(len(data))
+
+    for i in range(1, len(data)):
+        # 使用SMA_120替代SMA_200
+        if (data['Close'].iloc[i] > data['SMA_120'].iloc[i]) and (data['Close'].iloc[i-1] <= data['SMA_120'].iloc[i-1]):
+            signals[i] = 1  # 突破買入訊號
+        elif (data['Close'].iloc[i] < data['SMA_120'].iloc[i]) and (data['Close'].iloc[i-1] > data['SMA_120'].iloc[i-1]):
+            signals[i] = -1  # 跌破賣出訊號
+
+    return signals
+
+# 生成交易信號
+weekly_data['Signal'] = generate_signals(weekly_data)
 
 # 計算策略收益率
-# 調整交易週期為一周一次
-weekly_data = data.resample('W').last()
-
-weekly_data['Strategy_Return'] = np.where((weekly_data['SMA_120'] < weekly_data['Close']) & (weekly_data['Close'].pct_change() > 0.005), 1,
-                                          np.where((weekly_data['SMA_120'] > weekly_data['Close']) & (weekly_data['SMA_5'] < weekly_data['SMA_20']), -1,
-                                                   0)) * weekly_data['Close'].pct_change()
+weekly_data['Strategy_Return'] = weekly_data['Signal'] * weekly_data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
-sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
+buy_signals = weekly_data[weekly_data['Signal'] == 1].index
+sell_signals = weekly_data[weekly_data['Signal'] == -1].index
 
 # 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
@@ -87,7 +104,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                       go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN + 格蘭碧8大法則 均線:120均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -119,8 +136,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNNBTCUSDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_BTCUSD_CNN_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNNBTCUSDresult_weekly.html")
+webbrowser.open("trading_Granvills8rules_BTCUSD_CNN_result_weekly.html")

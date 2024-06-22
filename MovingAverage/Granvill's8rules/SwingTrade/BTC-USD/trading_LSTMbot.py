@@ -12,17 +12,11 @@ from tensorflow.keras.layers import LSTM, Dense
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 每周一次計算移動平均線
 data_weekly = data.resample('W-FRI').last()
-data_weekly['SMA_5'] = data_weekly['Close'].rolling(window=5).mean()
-data_weekly['SMA_20'] = data_weekly['Close'].rolling(window=20).mean()
-data_weekly['SMA_60'] = data_weekly['Close'].rolling(window=60).mean()
-data_weekly['SMA_120'] = data_weekly['Close'].rolling(window=120).mean()
+data_weekly['SMA_200'] = data_weekly['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data_weekly['Position'] = 0
@@ -32,12 +26,14 @@ data_weekly['Previous_Close'] = data_weekly['Close'].shift(1)
 
 # 確定交易信號
 data_weekly['Buy_Signal'] = np.where(
-    (data_weekly['Close'] > data_weekly['SMA_120']) & (data_weekly['Close'] > data_weekly['Previous_Close'] * 1.005),
-    1, 0
+    (data_weekly['Close'] > data_weekly['SMA_200']) &
+    ((data_weekly['Close'] > data_weekly['Previous_Close']) |
+     ((data_weekly['Close'] < data_weekly['SMA_200']) & (data_weekly['SMA_200'] > data_weekly['SMA_200'].shift(1)))), 1, 0
 )
 data_weekly['Sell_Signal'] = np.where(
-    (data_weekly['Close'] < data_weekly['SMA_120']) & (data_weekly['Close'] < data_weekly['SMA_5']) & (data_weekly['Close'] < data_weekly['SMA_20']),
-    1, 0
+    (data_weekly['Close'] < data_weekly['SMA_200']) &
+    ((data_weekly['Close'] < data_weekly['SMA_200']) |
+     ((data_weekly['Close'] > data_weekly['SMA_200']) & (data_weekly['SMA_200'] < data_weekly['SMA_200'].shift(1)))), 1, 0
 )
 
 # 模擬交易
@@ -53,7 +49,7 @@ for i in range(1, len(data_weekly)):
 data_weekly['Strategy_Return'] = data_weekly['Position'].shift(1) * data_weekly['Close'].pct_change()
 
 # 准備特徵和目標變量
-X = data_weekly[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+X = data_weekly[['SMA_200']].values
 y = np.where(data_weekly['Close'].shift(-1) > data_weekly['Close'], 1, 0)
 
 # 划分訓練集和測試集
@@ -111,7 +107,7 @@ fig = go.Figure(data=[go.Candlestick(x=data_weekly.index,
                       go.Scatter(x=sell_signals, y=data_weekly.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (長短期記憶網路 LSTM  + 每周一次波段移動平均線策略)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (長短期記憶網路 LSTM + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -143,8 +139,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_LSTMBTCUSDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_BTCUSD_LSTM_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_LSTMBTCUSDresult_weekly.html")
+webbrowser.open("trading_Granvills8rules_BTCUSD_LSTM_result_weekly.html")
