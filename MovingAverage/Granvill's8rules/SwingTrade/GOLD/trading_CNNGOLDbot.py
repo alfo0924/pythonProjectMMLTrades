@@ -4,90 +4,80 @@ import numpy as np
 import webbrowser
 import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout
 
-# 下載比特幣歷史數據
+# 下載黃金的歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+# 計算移動平均線 (SMA) 作為趨勢指標
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
-# 移除NaN值
-data.dropna(inplace=True)
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
 
-# 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+# 每週最後一天的數據來生成交易信號
+weekly_data = data.resample('W').last().dropna()
+
+# 準備訓練數據
+X = weekly_data[['Close', 'SMA_200', 'Previous_Close']].values.reshape(-1, 3, 1)
+y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-# 特徵標準化
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# 構建CNN模型
+# 建立卷積神經網絡模型
 model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
+    Conv1D(filters=64, kernel_size=2, activation='relu', input_shape=(3, 1)),
     MaxPooling1D(pool_size=2),
     Flatten(),
     Dense(50, activation='relu'),
+    Dropout(0.2),
     Dense(1, activation='sigmoid')
 ])
 
-# 編譯模型
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# 將數據調整為CNN模型的輸入形狀
-X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
-X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
-
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
+model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
 
-# 使用模型進行預測
-predictions = model.predict(X_test_scaled)
-predictions_binary = (predictions > 0.5).astype(int)
+# 在測試數據上進行預測
+pred_proba = model.predict(X_test)
+pred = (pred_proba > 0.5).astype(int).reshape(-1)
 
-# 將預測結果添加到數據框中
-data['Predicted_Signal'] = np.nan
-data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+# 將預測轉換為 DataFrame
+pred_df = pd.DataFrame(pred_proba, index=weekly_data.index[-len(pred_proba):], columns=['Position'])
 
-# 計算策略收益率
-# 調整交易週期為一周一次
-weekly_data = data.resample('W').last()
+# 將預測值分配到 'Position' 列
+weekly_data['Position'] = 0  # 重新初始化
+weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
 
-weekly_data['Strategy_Return'] = np.where((weekly_data['SMA_120'] < weekly_data['Close']) & (weekly_data['Close'].pct_change() > 0.005), 1,
-                                          np.where((weekly_data['SMA_120'] > weekly_data['Close']) & (weekly_data['SMA_5'] < weekly_data['SMA_20']), -1,
-                                                   0)) * weekly_data['Close'].pct_change()
+# 將每週的交易信號擴展到每日數據
+data['Position'] = weekly_data['Position'].reindex(data.index, method='ffill')
 
-# 累積收益計算
-cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
+data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
+
+# 計算累積收益
+cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
-sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
+buy_signals = data[data['Position'] == 1].index
+sell_signals = data[data['Position'] == 0].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
-                                     open=weekly_data['Open'],
-                                     high=weekly_data['High'],
-                                     low=weekly_data['Low'],
-                                     close=weekly_data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (卷積神經網絡 CNN + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (卷積神經網絡 CNN + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -119,8 +109,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNNGOLDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_GOLD_CNN_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNNGOLDresult_weekly.html")
+webbrowser.open("trading_Granvills8rules_GOLD_CNN_result_weekly.html")

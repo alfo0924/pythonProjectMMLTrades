@@ -11,18 +11,15 @@ from sklearn.model_selection import train_test_split
 # 下載比特幣歷史數據
 data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
-
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
-# 準備訓練數據
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-1).reindex(X.index) > X['SMA_120'], 1, -1)
+# 移除NaN值
+data.dropna(inplace=True)
+
+# 准備訓練數據
+X = data[['Close', 'Previous_Close']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
@@ -35,7 +32,7 @@ model.fit(X_train, y_train)
 
 # 預測交易信號
 pred = model.predict(X_test)
-data['Position'] = pd.Series(pred, index=X_test.index)
+data['Position'] = pd.Series(pred, index=data.index[X_train.shape[0]:])  # 正確地為Position列分配索引
 
 # 計算策略收益率
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
@@ -60,7 +57,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='聯發科 2454 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架  交易頻率:一天多次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""

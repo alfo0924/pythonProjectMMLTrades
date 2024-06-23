@@ -11,17 +11,11 @@ from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
 # 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
-
 # 移除NaN值
 data.dropna(inplace=True)
 
 # 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+X = data[['Close']].values
 y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
@@ -34,8 +28,8 @@ X_test_scaled = scaler.transform(X_test)
 
 # 構建CNN模型
 model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
-    MaxPooling1D(pool_size=2),
+    Conv1D(filters=64, kernel_size=1, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
+    MaxPooling1D(pool_size=1),  # 將pool_size從2修改為1
     Flatten(),
     Dense(50, activation='relu'),
     Dense(1, activation='sigmoid')
@@ -49,7 +43,7 @@ X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled
 X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
 
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
+model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=1)
 
 # 使用模型進行預測
 predictions = model.predict(X_test_scaled)
@@ -59,7 +53,7 @@ predictions_binary = (predictions > 0.5).astype(int)
 data['Predicted_Signal'] = np.nan
 data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
-# 累積收益計算
+# 計算策略收益率
 data['Strategy_Return'] = data['Close'].pct_change() * data['Predicted_Signal'].shift(1)
 
 # 累積收益計算
@@ -76,7 +70,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      high=data['High'],
                                      low=data['Low'],
                                      close=data['Close'],
-                                     name='Candlestick'),
+                                     name='K線圖'),
                       go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',

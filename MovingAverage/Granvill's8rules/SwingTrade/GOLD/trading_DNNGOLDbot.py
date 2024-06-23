@@ -8,14 +8,8 @@ from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense
 
-# 下載比特幣歷史數據
+# 下載黃金(GOLD)的歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
-
-# 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
 
 # 初始化持倉
 data['Position'] = 0
@@ -24,13 +18,22 @@ data['Position'] = 0
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 確定交易信號
+# 買進訊號
 data['Buy_Signal'] = np.where(
-    (data['Close'] > data['SMA_120']) & (data['Close'] > data['Previous_Close'] * 1.005),
-    1, 0
+    ((data['Close'] > data['Close'].rolling(window=200).mean()) &
+     (data['Close'] > data['Previous_Close']) &
+     ((data['Close'].rolling(window=200).mean().diff() >= 0) |
+      ((data['Close'] < data['Close'].rolling(window=200).mean()) &
+       (data['Close'].rolling(window=200).mean().diff() > 0)))), 1, 0
 )
+
+# 賣出訊號
 data['Sell_Signal'] = np.where(
-    (data['Close'] < data['SMA_120']) & (data['Close'] < data['SMA_5']) & (data['Close'] < data['SMA_20']),
-    1, 0
+    ((data['Close'] < data['Close'].rolling(window=200).mean()) &
+     (data['Close'].shift(1) > data['Close'].rolling(window=200).mean()) &
+     ((data['Close'].rolling(window=200).mean().diff() <= 0) |
+      ((data['Close'] > data['Close'].rolling(window=200).mean()) &
+       (data['Close'].rolling(window=200).mean().diff() < 0)))), 1, 0
 )
 
 # 將日期設置為索引，方便後續每周操作
@@ -55,7 +58,7 @@ cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 準備特徵和目標變量
-X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+X = weekly_data[['Close']].values
 y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
 
 # 划分訓練集和測試集
@@ -110,7 +113,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                       go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (深度神經網絡 DNN + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (深度神經網絡 DNN + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -142,8 +145,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_DNNGOLDresult_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_GOLD_DNN_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_DNNGOLDresult_weekly.html")
+webbrowser.open("trading_Granvills8rules_GOLD_DNN_result_weekly.html")

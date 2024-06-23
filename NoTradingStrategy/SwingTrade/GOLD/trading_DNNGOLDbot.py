@@ -11,21 +11,12 @@ from tensorflow.keras.layers import Dense
 # 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
-# 將數據按每週重採樣，選擇每週最後一天的價格作為代表
-weekly_data = data.resample('W').last()
-
-# 計算移動平均線 (SMA) 作為趨勢指標
-weekly_data['SMA_5'] = weekly_data['Close'].rolling(window=5).mean()
-weekly_data['SMA_20'] = weekly_data['Close'].rolling(window=20).mean()
-weekly_data['SMA_60'] = weekly_data['Close'].rolling(window=60).mean()
-weekly_data['SMA_120'] = weekly_data['Close'].rolling(window=120).mean()
-
 # 移除NaN值
-weekly_data.dropna(inplace=True)
+data.dropna(inplace=True)
 
 # 準備特徵和目標變量
-X = weekly_data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
+X = data[['Close']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -53,33 +44,47 @@ predictions = model.predict(X_test_scaled)
 predictions_binary = (predictions > 0.5).astype(int)
 
 # 將預測結果添加到數據框中
-weekly_data['Predicted_Signal'] = np.nan
-weekly_data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+data['Predicted_Signal'] = np.nan
+data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
-# 計算策略收益率
-weekly_data['Strategy_Return'] = weekly_data['Predicted_Signal'] * weekly_data['Close'].pct_change()
+# 添加每週一次交易的條件
+data['Trade_Signal'] = 0  # 將初始值設置為0，而不是NaN
+weekly_buy_signal = False
+for i in range(len(data)):
+    if i % 7 == 0:  # 每週一次
+        if data['Predicted_Signal'].iloc[i] == 1:
+            weekly_buy_signal = True
+    if weekly_buy_signal:
+        data['Trade_Signal'].iloc[i] = 1
+        weekly_buy_signal = False
+
+# 確認Trade_Signal列中沒有NaN值
+data['Trade_Signal'].fillna(0, inplace=True)
 
 # 累積收益計算
-cumulative_return = (weekly_data['Strategy_Return'] + 1).cumprod()
+data['Strategy_Return'] = data['Trade_Signal'] * data['Close'].pct_change()
+
+# 累積收益計算
+cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = weekly_data[weekly_data['Predicted_Signal'] == 1].index
-sell_signals = weekly_data[weekly_data['Predicted_Signal'] == 0].index
+buy_signals = data[data['Trade_Signal'] == 1].index
+sell_signals = data[data['Trade_Signal'] == 0].index
 
 # 生成互動式圖表
-fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
-                                     open=weekly_data['Open'],
-                                     high=weekly_data['High'],
-                                     low=weekly_data['Low'],
-                                     close=weekly_data['Close'],
+fig = go.Figure(data=[go.Candlestick(x=data.index,
+                                     open=data['Open'],
+                                     high=data['High'],
+                                     low=data['Low'],
+                                     close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (深度神經網絡 DNN 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GOLD 交易策略 (深度神經網絡 DNN 自主學習 無任何自定義交易策略框架  交易頻率:每周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -111,8 +116,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_GOLD_DNN_autonomous_weekly_result.html", "w", encoding="utf-8") as file:
+with open("trading_GOLD_DNN_autonomous_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_GOLD_DNN_autonomous_weekly_result.html")
+webbrowser.open("trading_GOLD_DNN_autonomous_result_weekly.html")

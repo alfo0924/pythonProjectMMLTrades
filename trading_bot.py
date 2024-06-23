@@ -6,70 +6,61 @@ import plotly.graph_objects as go
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import train_test_split
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_200'] = data['Close'].rolling(window=200).mean()
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
 
-# 初始化持倉
-data['Position'] = 0
+# 移除NaN值
+data.dropna(inplace=True)
 
-# 將前一周的價格加入作為特徵 (因為週期是一周一次)
-data['Previous_Close'] = data['Close'].shift(5)  # 5天 = 1周
+# 准備訓練數據
+X = data[['Close', 'Previous_Close']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
 
-# 移動平均線交易策略
-# 買進訊號
-data['Buy_Signal'] = (
-        (data['Close'] > data['SMA_200']) &  # 1. 突破
-        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |  # 2. 假跌破
-        ((data['Close'] > data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'].shift(1))) |  # 3. 支撐
-        ((data['Close'] < data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'].shift(1))) &  # 4. 抄底
-        (data['Close'] > data['Previous_Close'])
-)
-
-# 賣出訊號
-data['Sell_Signal'] = (
-        (data['Close'] < data['SMA_200']) |  # 5. 跌破
-        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |  # 6. 假突破
-        ((data['Close'] < data['SMA_200']) & (data['Close'].shift(1) > data['SMA_200'].shift(1))) |  # 7. 反壓
-        ((data['Close'] > data['SMA_200']) & (data['Close'].shift(1) > data['SMA_200'].shift(1))) &  # 8. 反轉
-        (data['Close'] < data['Previous_Close'])
-)
-
-# 計算持倉
-data.loc[data['Buy_Signal'], 'Position'] = 1
-data.loc[data['Sell_Signal'], 'Position'] = -1
-
-# 準備訓練數據
-X = data[['SMA_200', 'Previous_Close']].dropna()
-y = np.where(data['Close'].shift(-5).reindex(X.index) > X['SMA_200'], 1, -1)  # 預測未來一周的價格變化
+# 划分訓練集和測試集
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
 # 初始化支持向量機模型
 model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
 
 # 訓練模型
-model.fit(X, y)
+model.fit(X_train, y_train)
 
-# 預測交易信號
-pred = model.predict(X)
-data['Position'] = pd.Series(pred, index=X.index)
+# 在測試集上進行預測
+pred = model.predict(X_test)
+
+# 將預測結果映射回原始數據的索引
+pred_series = pd.Series(pred, index=data.index[X_train.shape[0]:])
+
+# 每周一次交易的設置
+data['Trade_Signal'] = 0
+weekly_buy_signal = False
+for i, idx in enumerate(data.index[X_train.shape[0]:]):
+    if data.index[i].dayofweek == 0:  # 每周的第一個交易日
+        if pred_series.iloc[i] == 1:
+            weekly_buy_signal = True
+    if weekly_buy_signal:
+        data.loc[idx, 'Trade_Signal'] = 1
+        weekly_buy_signal = False
+
+
+# 確認Trade_Signal列中沒有NaN值
+data['Trade_Signal'].fillna(0, inplace=True)
 
 # 計算策略收益率
-data['Strategy_Return'] = data['Position'].shift(5) * data['Close'].pct_change(periods=5)
+data['Strategy_Return'] = data['Trade_Signal'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
-# 生成交易點位 (因週期為一周一次，只需每周第一個交易日的點位)
-buy_signals = data[data['Position'] == 1].resample('W').first().index
-sell_signals = data[data['Position'] == -1].resample('W').first().index
-
-# 確保交易信號在原始數據的索引中存在
-buy_signals = buy_signals[buy_signals.isin(data.index)]
-sell_signals = sell_signals[sell_signals.isin(data.index)]
+# 生成交易點位
+buy_signals = data[data['Trade_Signal'] == 1].index
+sell_signals = data[data['Trade_Signal'] == 0].index
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -83,7 +74,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架  交易頻率:每周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -115,8 +106,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_Granvills8rules_BTCUSD_SVM_result_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_SVM_autonomous_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_Granvills8rules_BTCUSD_SVM_result_weekly.html")
+webbrowser.open("trading_SVM_autonomous_result_weekly.html")
