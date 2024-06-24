@@ -6,23 +6,19 @@ import plotly.graph_objects as go
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Input
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
-data['SMA_200'] = data['Close'].rolling(window=200).mean()  # Compute 200-day SMA
+data['SMA_200'] = data['Close'].rolling(window=200).mean()  # 計算200日移動平均線
 
 # 移除NaN值
 data.dropna(inplace=True)
 
 # 準備特徵和目標變量
-X = data[['SMA_5', 'SMA_20', 'SMA_60', 'SMA_120']].values
+X = data[['SMA_200']].values
 y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
 
 # 划分訓練集和測試集
@@ -35,8 +31,9 @@ X_test_scaled = scaler.transform(X_test)
 
 # 構建CNN模型
 model = Sequential([
-    Conv1D(filters=64, kernel_size=3, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
-    MaxPooling1D(pool_size=2),
+    Input(shape=(X_train_scaled.shape[1], 1)),
+    Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'),
+    MaxPooling1D(pool_size=1),  # 修改 MaxPooling1D 的 pool_size 為 1 解決問題
     Flatten(),
     Dense(50, activation='relu'),
     Dense(1, activation='sigmoid')
@@ -45,15 +42,16 @@ model = Sequential([
 # 編譯模型
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-# 將數據調整為CNN模型的輸入形狀
-X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
-X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
-
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=0)
+model.fit(X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1)),
+          y_train,
+          epochs=10,
+          batch_size=32,
+          validation_data=(X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1)), y_test),
+          verbose=0)
 
 # 使用模型進行預測
-predictions = model.predict(X_test_scaled)
+predictions = model.predict(X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1)))
 predictions_binary = (predictions > 0.5).astype(int)
 
 # 將預測結果添加到數據框中
@@ -63,16 +61,10 @@ data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 # 計算策略收益率
 data['Strategy_Return'] = np.where((data['SMA_200'] < data['Close']) & (data['Close'].pct_change() > 0.005), 1,
                                    np.where((data['SMA_200'] > data['Close']) &
-                                            ((data['SMA_5'] < data['SMA_20']) |
-                                             (data['Close'] > data['SMA_120']) |
-                                             ((data['Close'] < data['SMA_120']) & (data['Close'] > data['SMA_5']) & (data['Close'] > data['SMA_20'])) |
-                                             (data['Close'] < data['SMA_60']) |
-                                             ((data['Close'] < data['SMA_60']) & (data['Close'] > data['SMA_5']) & (data['Close'] > data['SMA_20'])) |
-                                             (data['Close'] < data['SMA_20']) |
-                                             ((data['Close'] < data['SMA_20']) & (data['Close'] > data['SMA_5'])) |
-                                             (data['Close'] < data['SMA_5']) |
-                                             (data['Close'] > data['SMA_120']) |
-                                             (data['Close'] < data['SMA_120'])), -1, 0)) * data['Close'].pct_change()
+                                            ((data['Close'].shift(1) < data['SMA_200']) &
+                                             (data['Close'] > data['SMA_200'])) |
+                                            ((data['Close'].shift(1) > data['SMA_200']) &
+                                             (data['Close'] < data['SMA_200'])), -1, 0)) * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()

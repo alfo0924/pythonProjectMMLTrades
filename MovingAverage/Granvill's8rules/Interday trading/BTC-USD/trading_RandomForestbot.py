@@ -116,3 +116,4 @@ with open("trading_Granvills8rules_RF_result.html", "w", encoding="utf-8") as fi
 
 # 打開瀏覽器
 webbrowser.open("trading_Granvills8rules_RF_result.html")
+
