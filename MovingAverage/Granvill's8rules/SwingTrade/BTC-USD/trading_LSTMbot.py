@@ -25,15 +25,20 @@ data_weekly['Position'] = 0
 data_weekly['Previous_Close'] = data_weekly['Close'].shift(1)
 
 # 確定交易信號
+# 買進訊號
 data_weekly['Buy_Signal'] = np.where(
     (data_weekly['Close'] > data_weekly['SMA_200']) &
     ((data_weekly['Close'] > data_weekly['Previous_Close']) |
-     ((data_weekly['Close'] < data_weekly['SMA_200']) & (data_weekly['SMA_200'] > data_weekly['SMA_200'].shift(1)))), 1, 0
+     (data_weekly['Close'] < data_weekly['SMA_200']) &
+     (data_weekly['SMA_200'].diff().shift(1) >= 0)), 1, 0
 )
+
+# 賣出訊號
 data_weekly['Sell_Signal'] = np.where(
     (data_weekly['Close'] < data_weekly['SMA_200']) &
     ((data_weekly['Close'] < data_weekly['SMA_200']) |
-     ((data_weekly['Close'] > data_weekly['SMA_200']) & (data_weekly['SMA_200'] < data_weekly['SMA_200'].shift(1)))), 1, 0
+     (data_weekly['Close'] > data_weekly['SMA_200']) &
+     (data_weekly['SMA_200'].diff().shift(1) <= 0)), 1, 0
 )
 
 # 模擬交易

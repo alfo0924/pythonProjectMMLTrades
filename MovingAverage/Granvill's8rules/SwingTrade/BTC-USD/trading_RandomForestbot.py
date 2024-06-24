@@ -20,15 +20,28 @@ data['Position'] = 0
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 根據策略生成交易信號
-data['Buy_Signal'] = ((data['Close'] > data['SMA_200']) &
-                      ((data['Close'] > data['SMA_200'].shift(1)) |  # 突破、假跌破、支撐、抄底條件
-                       (data['Close'] < data['SMA_200']) &
-                       (data['SMA_200'].diff() > 0))).astype(int)
+# 買進訊號條件
+buy_signal_condition = (
+        (data['Close'] > data['SMA_200']) &
+        ((data['SMA_200'].diff() >= 0) |
+         ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1)))) |
+        ((data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() > 0)) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() < 0))
+).astype(int)
 
-data['Sell_Signal'] = ((data['Close'] < data['SMA_200']) &
-                       ((data['Close'] < data['SMA_200'].shift(1)) |  # 跌破、假突破、反壓、反轉條件
-                        (data['Close'] > data['SMA_200']) &
-                        (data['SMA_200'].diff() < 0))).astype(int)
+# 賣出訊號條件
+sell_signal_condition = (
+        (data['Close'] < data['SMA_200']) &
+        ((data['SMA_200'].diff() < 0) |
+         ((data['Close'] < data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1)))) |
+        ((data['Close'] < data['SMA_200']) & (data['SMA_200'].diff() < 0)) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() > 0))
+).astype(int)
+
+data['Buy_Signal'] = buy_signal_condition
+data['Sell_Signal'] = sell_signal_condition
 
 # 將日期設置為索引，方便後續每周操作
 data.set_index(pd.to_datetime(data.index), inplace=True)

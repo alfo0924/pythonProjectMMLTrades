@@ -13,6 +13,9 @@ data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
+# 移除其他移動平均線
+data = data[['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_200']]
+
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
@@ -61,6 +64,7 @@ weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
 # 將每週的交易信號擴展到每日數據
 data['Position'] = weekly_data['Position'].reindex(data.index, method='ffill')
 
+# 計算策略收益
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 計算累積收益
@@ -78,9 +82,9 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='BTC-USD 交易策略 (遞歸神經網絡 RNN + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
