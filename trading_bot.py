@@ -3,76 +3,82 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Input
+from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
-# 計算移動平均線
-data['SMA_200'] = data['Close'].rolling(window=200).mean()  # 計算200日移動平均線
+# 計算移動平均線 (SMA) 作為趨勢指標
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
-# 移除NaN值
-data.dropna(inplace=True)
+# 初始化持倉
+data['Position'] = 0
 
-# 準備特徵和目標變量
-X = data[['SMA_200']].values
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
 
-# 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# 根據策略生成交易信號
+# 買進訊號條件
+# 1. 突破
+buy_signal_1 = (data['Close'] > data['SMA_200']) & (data['Close'] > data['Previous_Close'])
+# 2. 假跌破
+buy_signal_2 = (data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))
+# 3. 支撐
+buy_signal_3 = (data['Close'] > data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'])
+# 4. 抄底
+buy_signal_4 = (data['Close'] < data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'])
 
-# 特徵標準化
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+data['Buy_Signal'] = (buy_signal_1 | buy_signal_2 | buy_signal_3 | buy_signal_4).astype(int)
 
-# 構建CNN模型
-model = Sequential([
-    Input(shape=(X_train_scaled.shape[1], 1)),
-    Conv1D(filters=64, kernel_size=3, activation='relu', padding='same'),
-    MaxPooling1D(pool_size=1),  # 修改 MaxPooling1D 的 pool_size 為 1 解決問題
-    Flatten(),
-    Dense(50, activation='relu'),
-    Dense(1, activation='sigmoid')
-])
+# 賣出訊號條件
+# 5. 跌破
+sell_signal_1 = (data['Close'] < data['SMA_200']) & (data['Close'] < data['Previous_Close'])
+# 6. 假突破
+sell_signal_2 = (data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
+# 7. 反壓
+sell_signal_3 = (data['Close'] < data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
+# 8. 反轉
+sell_signal_4 = (data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
 
-# 編譯模型
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+data['Sell_Signal'] = (sell_signal_1 | sell_signal_2 | sell_signal_3 | sell_signal_4).astype(int)
+
+# 初始化持倉狀態
+position = 0
+
+# 生成交易信號
+for i in range(len(data)):
+    if data['Buy_Signal'].iloc[i] == 1:
+        position = 1
+    elif data['Sell_Signal'].iloc[i] == 1:
+        position = 0
+    data['Position'].iloc[i] = position
+
+# 特徵和目標變量
+X = data[['Close', 'SMA_200', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
+
+# 初始化随機森林模型
+model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
 # 訓練模型
-model.fit(X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1)),
-          y_train,
-          epochs=10,
-          batch_size=32,
-          validation_data=(X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1)), y_test),
-          verbose=0)
+model.fit(X, y)
 
-# 使用模型進行預測
-predictions = model.predict(X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1)))
-predictions_binary = (predictions > 0.5).astype(int)
-
-# 將預測結果添加到數據框中
-data['Predicted_Signal'] = np.nan
-data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+# 預測交易信號
+pred = model.predict(X)
+data['Position'] = pd.Series(pred, index=X.index)
 
 # 計算策略收益率
-data['Strategy_Return'] = np.where((data['SMA_200'] < data['Close']) & (data['Close'].pct_change() > 0.005), 1,
-                                   np.where((data['SMA_200'] > data['Close']) &
-                                            ((data['Close'].shift(1) < data['SMA_200']) &
-                                             (data['Close'] > data['SMA_200'])) |
-                                            ((data['Close'].shift(1) > data['SMA_200']) &
-                                             (data['Close'] < data['SMA_200'])), -1, 0)) * data['Close'].pct_change()
+data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
-# 累積收益計算
+# 計算累積收益
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Predicted_Signal'] == 1].index
-sell_signals = data[data['Predicted_Signal'] == 0].index
+buy_signals = data[data['Position'] == 1].index
+sell_signals = data[data['Position'] == -1].index
 
 # 生成互動式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -81,12 +87,12 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買進信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN + 格蘭碧8大法則 均線:200均 交易頻率:一天多次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (隨機森林 RF + 格蘭碧8大法則 均線:200均 交易頻率:一天多次 )', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -104,7 +110,7 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買入點位: {buy_signals[:3].to_list()}</li>
+        <li>買進點位: {buy_signals[:3].to_list()}</li>
         <li>賣出點位: {sell_signals[:3].to_list()}</li>
     </ul>
     <h2>交易圖表</h2>
@@ -118,8 +124,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_Granvills8rules_CNN_result.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_RF_result.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_Granvills8rules_CNN_result.html")
+webbrowser.open("trading_Granvills8rules_RF_result.html")
