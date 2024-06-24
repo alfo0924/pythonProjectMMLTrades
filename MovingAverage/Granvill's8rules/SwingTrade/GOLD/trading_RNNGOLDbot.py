@@ -3,9 +3,6 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
 
 # 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
@@ -13,54 +10,45 @@ data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
+# 移除其他移動平均線
+data = data[['Open', 'High', 'Low', 'Close', 'Volume', 'SMA_200']]
+
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 每週最後一天的數據來生成交易信號
 weekly_data = data.resample('W').last().dropna()
 
-# 準備訓練數據
-X = weekly_data[['Close', 'SMA_200', 'Previous_Close']]
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
+# 買進訊號條件
+buy_signal_1 = (weekly_data['Close'] > weekly_data['SMA_200']) & (weekly_data['Close'] > weekly_data['Previous_Close'])
+buy_signal_2 = (weekly_data['Close'] < weekly_data['SMA_200']) & (weekly_data['Close'] > weekly_data['SMA_200'].shift(1))
+buy_signal_3 = (weekly_data['Close'] > weekly_data['SMA_200']) & (weekly_data['Close'].shift(1) < weekly_data['SMA_200'])
+buy_signal_4 = (weekly_data['Close'] < weekly_data['SMA_200']) & (weekly_data['Close'].shift(1) < weekly_data['SMA_200'])
 
-# 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+weekly_data['Buy_Signal'] = (buy_signal_1 | buy_signal_2 | buy_signal_3 | buy_signal_4).astype(int)
 
-# 由於循環神經網絡需要 3D 的輸入 (samples, time steps, features)
-# 我們需要重塑數據
-X_train = np.reshape(X_train.values, (X_train.shape[0], 1, X_train.shape[1]))
-X_test = np.reshape(X_test.values, (X_test.shape[0], 1, X_test.shape[1]))
+# 賣出訊號條件
+sell_signal_1 = (weekly_data['Close'] < weekly_data['SMA_200']) & (weekly_data['Close'] < weekly_data['Previous_Close'])
+sell_signal_2 = (weekly_data['Close'] > weekly_data['SMA_200']) & (weekly_data['Close'] < weekly_data['SMA_200'].shift(1))
+sell_signal_3 = (weekly_data['Close'] < weekly_data['SMA_200']) & (weekly_data['Close'] < weekly_data['SMA_200'].shift(1))
+sell_signal_4 = (weekly_data['Close'] > weekly_data['SMA_200']) & (weekly_data['Close'] < weekly_data['SMA_200'].shift(1))
 
-# 建立循環神經網絡模型
-model = Sequential([
-    LSTM(units=50, return_sequences=True, input_shape=(X_train.shape[1], X_train.shape[2])),
-    Dropout(0.2),
-    LSTM(units=50, return_sequences=True),
-    Dropout(0.2),
-    LSTM(units=50),
-    Dropout(0.2),
-    Dense(units=1, activation='sigmoid')
-])
+weekly_data['Sell_Signal'] = (sell_signal_1 | sell_signal_2 | sell_signal_3 | sell_signal_4).astype(int)
 
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+# 初始化持倉狀態
+weekly_data['Position'] = 0
 
-# 訓練模型
-model.fit(X_train, y_train, epochs=50, batch_size=32, validation_data=(X_test, y_test), verbose=0)
-
-# 在測試數據上進行預測
-pred_proba = model.predict(X_test)
-pred = (pred_proba > 0.5).astype(int).reshape(-1)
-
-# 將預測轉換為 DataFrame
-pred_df = pd.DataFrame(pred_proba, index=X.index[-len(pred_proba):], columns=['Position'])
-
-# 將預測值分配到 'Position' 列
-weekly_data['Position'] = 0  # 重新初始化
-weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
+# 生成交易信號
+for i in range(len(weekly_data)):
+    if weekly_data['Buy_Signal'].iloc[i] == 1:
+        weekly_data['Position'].iloc[i] = 1
+    elif weekly_data['Sell_Signal'].iloc[i] == 1:
+        weekly_data['Position'].iloc[i] = 0
 
 # 將每週的交易信號擴展到每日數據
 data['Position'] = weekly_data['Position'].reindex(data.index, method='ffill')
 
+# 計算策略收益
 data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
 
 # 計算累積收益
@@ -78,9 +66,9 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='黃金 GOLD 交易策略 (遞歸神經網絡 RNN + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)

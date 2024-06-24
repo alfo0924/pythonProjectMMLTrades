@@ -3,60 +3,75 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-# 下載黃金的歷史數據
+# 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
-# 將前一天的價格加入作為特徵
-data['Previous_Close'] = data['Close'].shift(1)
+# 初始化持倉
+data['Position'] = 0
 
-# 每週最後一天的數據來生成交易信號
-weekly_data = data.resample('W').last().dropna()
+# 將前一周的價格加入作為特徵 (因為週期是一周一次)
+data['Previous_Close'] = data['Close'].shift(5)  # 5天 = 1周
+
+# 移動平均線交易策略
+# 買進訊號
+data['Buy_Signal'] = (
+        (data['Close'] > data['SMA_200']) &  # 1. 突破
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |  # 2. 假跌破
+        ((data['Close'] > data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'].shift(1))) |  # 3. 支撐
+        ((data['Close'] < data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'].shift(1))) &  # 4. 抄底
+        (data['Close'] > data['Previous_Close'])
+)
+
+# 賣出訊號
+data['Sell_Signal'] = (
+        (data['Close'] < data['SMA_200']) |  # 5. 跌破
+        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |  # 6. 假突破
+        ((data['Close'] < data['SMA_200']) & (data['Close'].shift(1) > data['SMA_200'].shift(1))) |  # 7. 反壓
+        ((data['Close'] > data['SMA_200']) & (data['Close'].shift(1) > data['SMA_200'].shift(1))) &  # 8. 反轉
+        (data['Close'] < data['Previous_Close'])
+)
+
+# 計算持倉
+data.loc[data['Buy_Signal'], 'Position'] = 1
+data.loc[data['Sell_Signal'], 'Position'] = -1
 
 # 準備訓練數據
-X = weekly_data[['Close', 'SMA_200', 'Previous_Close']]
-y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, 0)
-
-# 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
+X = data[['SMA_200', 'Previous_Close']].dropna()
+y = np.where(data['Close'].shift(-5).reindex(X.index) > X['SMA_200'], 1, -1)  # 預測未來一周的價格變化
 
 # 初始化支持向量機模型
 model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
 
 # 訓練模型
-model.fit(X_train, y_train)
+model.fit(X, y)
 
-# 在測試數據上進行預測
-pred = model.predict(X_test)
+# 預測交易信號
+pred = model.predict(X)
+data['Position'] = pd.Series(pred, index=X.index)
 
-# 將預測轉換為 DataFrame
-pred_df = pd.DataFrame(pred, index=X_test.index, columns=['Position'])
+# 計算策略收益率
+data['Strategy_Return'] = data['Position'].shift(5) * data['Close'].pct_change(periods=5)
 
-# 將預測值分配到 'Position' 列
-weekly_data['Position'] = 0  # 重新初始化
-weekly_data.loc[pred_df.index, 'Position'] = pred_df['Position']
-
-# 將每週的交易信號擴展到每日數據
-data['Position'] = weekly_data['Position'].reindex(data.index, method='ffill')
-
-data['Strategy_Return'] = data['Position'].shift(1) * data['Close'].pct_change()
-
-# 計算累積收益
+# 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
-# 生成交易點位
-buy_signals = data[data['Position'] == 1].index
-sell_signals = data[data['Position'] == 0].index
+# 生成交易點位 (因週期為一周一次，只需每周第一個交易日的點位)
+buy_signals = data[data['Position'] == 1].resample('W').first().index
+sell_signals = data[data['Position'] == -1].resample('W').first().index
 
-# 生成互動式圖表
+# 確保交易信號在原始數據的索引中存在
+buy_signals = buy_signals[buy_signals.isin(data.index)]
+sell_signals = sell_signals[sell_signals.isin(data.index)]
+
+# 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],

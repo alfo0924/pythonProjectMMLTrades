@@ -8,7 +8,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 
-# 下載黃金歷史數據
+# 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
@@ -25,13 +25,20 @@ data_weekly['Position'] = 0
 data_weekly['Previous_Close'] = data_weekly['Close'].shift(1)
 
 # 確定交易信號
+# 買進訊號
 data_weekly['Buy_Signal'] = np.where(
-    (data_weekly['Close'] > data_weekly['SMA_200']) & (data_weekly['Close'] > data_weekly['Previous_Close'] * 1.005),
-    1, 0
+    (data_weekly['Close'] > data_weekly['SMA_200']) &
+    ((data_weekly['Close'] > data_weekly['Previous_Close']) |
+     (data_weekly['Close'] < data_weekly['SMA_200']) &
+     (data_weekly['SMA_200'].diff().shift(1) >= 0)), 1, 0
 )
+
+# 賣出訊號
 data_weekly['Sell_Signal'] = np.where(
-    (data_weekly['Close'] < data_weekly['SMA_200']) & (data_weekly['Close'] < data_weekly['SMA_200']),
-    1, 0
+    (data_weekly['Close'] < data_weekly['SMA_200']) &
+    ((data_weekly['Close'] < data_weekly['SMA_200']) |
+     (data_weekly['Close'] > data_weekly['SMA_200']) &
+     (data_weekly['SMA_200'].diff().shift(1) <= 0)), 1, 0
 )
 
 # 模擬交易
@@ -100,9 +107,9 @@ fig = go.Figure(data=[go.Candlestick(x=data_weekly.index,
                                      low=data_weekly['Low'],
                                      close=data_weekly['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data_weekly.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
+                      go.Scatter(x=buy_signals, y=data_weekly.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=data_weekly.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
+                      go.Scatter(x=sell_signals, y=data_weekly.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='黃金 GOLD 交易策略 (長短期記憶網路 LSTM + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)

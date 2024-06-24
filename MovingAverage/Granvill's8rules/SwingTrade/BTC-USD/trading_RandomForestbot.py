@@ -23,21 +23,17 @@ data['Previous_Close'] = data['Close'].shift(1)
 # 買進訊號條件
 buy_signal_condition = (
         (data['Close'] > data['SMA_200']) &
-        ((data['SMA_200'].diff() >= 0) |
-         ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1)))) |
-        ((data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() > 0)) |
-        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |
-        ((data['Close'] > data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() < 0))
+        (data['SMA_200'].diff().shift(-1) > 0) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) < 0))
 ).astype(int)
 
 # 賣出訊號條件
 sell_signal_condition = (
         (data['Close'] < data['SMA_200']) &
-        ((data['SMA_200'].diff() < 0) |
-         ((data['Close'] < data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1)))) |
-        ((data['Close'] < data['SMA_200']) & (data['SMA_200'].diff() < 0)) |
-        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |
-        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff() > 0))
+        (data['SMA_200'].diff().shift(-1) < 0) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) > 0))
 ).astype(int)
 
 data['Buy_Signal'] = buy_signal_condition

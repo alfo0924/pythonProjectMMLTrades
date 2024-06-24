@@ -7,7 +7,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
-# 下載黃金歷史數據
+# 下載比特幣歷史數據
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
@@ -21,18 +21,23 @@ data['Previous_Close'] = data['Close'].shift(1)
 
 # 根據策略生成交易信號
 # 買進訊號條件
-data['Buy_Signal'] = ((data['SMA_200'].shift(1) <= data['SMA_200']) &
-                      (data['Close'] > data['SMA_200']) &
-                      ((data['Close'] > data['Previous_Close']) |
-                       ((data['Close'] < data['SMA_200']) &
-                        (data['SMA_200'].diff().gt(0))))).astype(int)
+buy_signal_condition = (
+        (data['Close'] > data['SMA_200']) &
+        (data['SMA_200'].diff().shift(-1) > 0) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) < 0))
+).astype(int)
 
 # 賣出訊號條件
-data['Sell_Signal'] = ((data['SMA_200'].shift(1) >= data['SMA_200']) &
-                       (data['Close'] < data['SMA_200']) &
-                       ((data['Close'] < data['Previous_Close']) |
-                        ((data['Close'] > data['SMA_200']) &
-                         (data['SMA_200'].diff().lt(0))))).astype(int)
+sell_signal_condition = (
+        (data['Close'] < data['SMA_200']) &
+        (data['SMA_200'].diff().shift(-1) < 0) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) > 0))
+).astype(int)
+
+data['Buy_Signal'] = buy_signal_condition
+data['Sell_Signal'] = sell_signal_condition
 
 # 將日期設置為索引，方便後續每周操作
 data.set_index(pd.to_datetime(data.index), inplace=True)
@@ -44,7 +49,7 @@ weekly_data = data.resample('W').last().dropna()
 model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
 # 特徵和目標變量
-X = weekly_data[['Close', 'Previous_Close']]
+X = weekly_data[['Close', 'SMA_200', 'Previous_Close']]
 y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, -1)
 
 # 訓練模型
@@ -72,9 +77,9 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      low=weekly_data['Low'],
                                      close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='黃金 GOLD 交易策略 (隨機森林 RF + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)

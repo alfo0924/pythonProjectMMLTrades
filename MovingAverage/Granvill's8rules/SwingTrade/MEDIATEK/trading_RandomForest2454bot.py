@@ -11,10 +11,7 @@ from sklearn.pipeline import make_pipeline
 data = yf.download('2454.TW', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data['Position'] = 0
@@ -23,12 +20,24 @@ data['Position'] = 0
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 根據策略生成交易信號
-data['Buy_Signal'] = ((data['Close'] > data['SMA_120']) &
-                      (data['Close'] > data['Previous_Close'] * 1.005)).astype(int)
+# 買進訊號條件
+buy_signal_condition = (
+        (data['Close'] > data['SMA_200']) &
+        (data['SMA_200'].diff().shift(-1) > 0) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) < 0))
+).astype(int)
 
-data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
-                       (data['Close'] < data['SMA_5']) &
-                       (data['Close'] < data['SMA_20'])).astype(int)
+# 賣出訊號條件
+sell_signal_condition = (
+        (data['Close'] < data['SMA_200']) &
+        (data['SMA_200'].diff().shift(-1) < 0) |
+        ((data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))) |
+        ((data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200']) & (data['SMA_200'].diff().shift(-1) > 0))
+).astype(int)
+
+data['Buy_Signal'] = buy_signal_condition
+data['Sell_Signal'] = sell_signal_condition
 
 # 將日期設置為索引，方便後續每周操作
 data.set_index(pd.to_datetime(data.index), inplace=True)
@@ -40,7 +49,7 @@ weekly_data = data.resample('W').last().dropna()
 model = make_pipeline(StandardScaler(), RandomForestClassifier(n_estimators=100, random_state=42))
 
 # 特徵和目標變量
-X = weekly_data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']]
+X = weekly_data[['Close', 'SMA_200', 'Previous_Close']]
 y = np.where(weekly_data['Close'].shift(-1) > weekly_data['Close'], 1, -1)
 
 # 訓練模型
@@ -68,12 +77,12 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      low=weekly_data['Low'],
                                      close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='聯發科 2454 交易策略 (隨機森林 RF  + 波段移動平均線策略 交易頻率:每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='聯發科 2454 交易策略 (隨機森林 RF + 格蘭碧8大法則 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -105,8 +114,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_RF2454result_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_Granvills8rules_2454_RF_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_RF2454result_weekly.html")
+webbrowser.open("trading_Granvills8rules_2454_RF_result_weekly.html")
