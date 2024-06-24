@@ -1,4 +1,3 @@
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -12,10 +11,7 @@ from sklearn.pipeline import make_pipeline
 data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
-data['SMA_5'] = data['Close'].rolling(window=5).mean()
-data['SMA_20'] = data['Close'].rolling(window=20).mean()
-data['SMA_60'] = data['Close'].rolling(window=60).mean()
-data['SMA_120'] = data['Close'].rolling(window=120).mean()
+data['SMA_200'] = data['Close'].rolling(window=200).mean()
 
 # 初始化持倉
 data['Position'] = 0
@@ -24,12 +20,29 @@ data['Position'] = 0
 data['Previous_Close'] = data['Close'].shift(1)
 
 # 根據策略生成交易信號
-data['Buy_Signal'] = ((data['Close'] > data['SMA_120']) &
-                      (data['Close'] > data['Previous_Close'] * 1.005)).astype(int)
+# 買進訊號條件
+# 1. 突破
+buy_signal_1 = (data['Close'] > data['SMA_200']) & (data['Close'] > data['Previous_Close'])
+# 2. 假跌破
+buy_signal_2 = (data['Close'] < data['SMA_200']) & (data['Close'] > data['SMA_200'].shift(1))
+# 3. 支撐
+buy_signal_3 = (data['Close'] > data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'])
+# 4. 抄底
+buy_signal_4 = (data['Close'] < data['SMA_200']) & (data['Close'].shift(1) < data['SMA_200'])
 
-data['Sell_Signal'] = ((data['Close'] < data['SMA_120']) &
-                       (data['Close'] < data['SMA_5']) &
-                       (data['Close'] < data['SMA_20'])).astype(int)
+data['Buy_Signal'] = (buy_signal_1 | buy_signal_2 | buy_signal_3 | buy_signal_4).astype(int)
+
+# 賣出訊號條件
+# 5. 跌破
+sell_signal_1 = (data['Close'] < data['SMA_200']) & (data['Close'] < data['Previous_Close'])
+# 6. 假突破
+sell_signal_2 = (data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
+# 7. 反壓
+sell_signal_3 = (data['Close'] < data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
+# 8. 反轉
+sell_signal_4 = (data['Close'] > data['SMA_200']) & (data['Close'] < data['SMA_200'].shift(1))
+
+data['Sell_Signal'] = (sell_signal_1 | sell_signal_2 | sell_signal_3 | sell_signal_4).astype(int)
 
 # 初始化持倉狀態
 position = 0
@@ -43,7 +56,7 @@ for i in range(len(data)):
     data['Position'].iloc[i] = position
 
 # 特徵和目標變量
-X = data[['Close', 'SMA_5', 'SMA_20', 'SMA_60', 'SMA_120', 'Previous_Close']].dropna()
+X = data[['Close', 'SMA_200', 'Previous_Close']].dropna()
 y = np.where(data['Close'].shift(-1).reindex(X.index) > X['Close'], 1, -1)
 
 # 初始化随機森林模型
@@ -74,7 +87,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      low=data['Low'],
                                      close=data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買進信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
