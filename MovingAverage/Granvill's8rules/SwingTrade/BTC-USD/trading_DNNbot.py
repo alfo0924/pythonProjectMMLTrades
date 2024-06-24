@@ -109,9 +109,9 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      low=weekly_data['Low'],
                                      close=weekly_data['Close'],
                                      name='Candlestick'),
-                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
+                      go.Scatter(x=buy_signals, y=weekly_data.loc[buy_signals]['Low'], mode='markers', name='買入訊號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
-                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
+                      go.Scatter(x=sell_signals, y=weekly_data.loc[sell_signals]['High'], mode='markers', name='賣出訊號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
 fig.update_layout(title='BTC-USD 交易策略 (深度神經網絡 DNN + 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
