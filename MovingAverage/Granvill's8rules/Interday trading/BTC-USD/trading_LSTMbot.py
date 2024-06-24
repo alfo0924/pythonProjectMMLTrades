@@ -24,12 +24,15 @@ data['Previous_Close'] = data['Close'].shift(1)
 data['Buy_Signal'] = np.where(
     (data['Close'] > data['SMA_200']) &
     ((data['Close'] > data['Previous_Close']) |
-     (data['Close'].shift(1) < data['SMA_200'].shift(1))),
+     (data['Close'].shift(1) < data['SMA_200'].shift(1)) |
+     (data['Close'] > data['SMA_200'].shift(1))),
     1, 0
 )
 data['Sell_Signal'] = np.where(
     (data['Close'] < data['SMA_200']) &
-    ((data['Close'] < data['SMA_200'].shift(1))),
+    ((data['Close'] < data['SMA_200'].shift(1)) |
+     (data['Close'] > data['SMA_200']) |
+     (data['Close'] < data['SMA_200'].shift(1))),
     1, 0
 )
 
@@ -104,7 +107,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (長短期記憶網路 LSTM + 格蘭碧8大法則 均線:200均 交易頻率:一天多次 )', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (長短期記憶網路 LSTM + 格蘭碧8大法則 均線:200均 交易頻率:一天多次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""

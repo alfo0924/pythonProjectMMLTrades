@@ -59,12 +59,14 @@ data['Predicted_Signal'] = np.nan
 data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 
 # 計算策略收益率
-data['Strategy_Return'] = np.where((data['SMA_200'] < data['Close']) & (data['Close'].pct_change() > 0.005), 1,
+data['Strategy_Return'] = np.where((data['SMA_200'] < data['Close']) &
+                                   ((data['Close'] > data['SMA_200']) |
+                                    ((data['Close'] < data['SMA_200']) &
+                                     (data['Close'].shift(1) < data['SMA_200'].shift(1)))), 1,
                                    np.where((data['SMA_200'] > data['Close']) &
-                                            ((data['Close'].shift(1) < data['SMA_200']) &
-                                             (data['Close'] > data['SMA_200'])) |
-                                            ((data['Close'].shift(1) > data['SMA_200']) &
-                                             (data['Close'] < data['SMA_200'])), -1, 0)) * data['Close'].pct_change()
+                                            ((data['Close'] < data['SMA_200']) |
+                                             ((data['Close'] > data['SMA_200']) &
+                                              (data['Close'].shift(1) > data['SMA_200'].shift(1)))), -1, 0)) * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
