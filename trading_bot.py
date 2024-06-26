@@ -3,102 +3,79 @@ import pandas as pd
 import numpy as np
 import webbrowser
 import plotly.graph_objects as go
-from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense
+from sklearn.pipeline import make_pipeline
+from sklearn.model_selection import train_test_split
 
 # 下載比特幣歷史數據
 data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
 
+# 將前一天的價格加入作為特徵
+data['Previous_Close'] = data['Close'].shift(1)
+
 # 移除NaN值
 data.dropna(inplace=True)
 
-# 準備特徵和目標變量
-X = data[['Close']].values
-y = np.where(data['Close'].shift(-1) > data['Close'], 1, 0)
+# 准備訓練數據
+X = data[['Close', 'Previous_Close']].values
+y = np.where(data['Close'].shift(-1) > data['Close'], 1, -1)
 
 # 划分訓練集和測試集
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False)
 
-# 特徵標準化
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
-
-# 構建CNN模型
-model = Sequential([
-    Conv1D(filters=64, kernel_size=1, activation='relu', input_shape=(X_train_scaled.shape[1], 1)),
-    MaxPooling1D(pool_size=1),  # 將pool_size從2修改為1
-    Flatten(),
-    Dense(50, activation='relu'),
-    Dense(1, activation='sigmoid')
-])
-
-# 編譯模型
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-# 將數據調整為CNN模型的輸入形狀
-X_train_scaled = X_train_scaled.reshape((X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
-X_test_scaled = X_test_scaled.reshape((X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
+# 初始化支持向量機模型
+model = make_pipeline(StandardScaler(), SVC(kernel='linear', C=1.0))
 
 # 訓練模型
-model.fit(X_train_scaled, y_train, epochs=10, batch_size=32, validation_data=(X_test_scaled, y_test), verbose=1)
+model.fit(X_train, y_train)
 
-# 使用模型進行預測
-predictions = model.predict(X_test_scaled)
-predictions_binary = (predictions > 0.5).astype(int)
+# 在測試集上進行預測
+pred = model.predict(X_test)
 
-# 將預測結果添加到數據框中
-data['Predicted_Signal'] = np.nan
-data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
+# 將預測結果映射回原始數據的索引
+pred_series = pd.Series(pred, index=data.index[-len(X_test):])
+
+# 每周一次交易的設置
+data['Trade_Signal'] = 0
+weekly_buy_signal = False
+for i in range(len(data)):
+    if data.index[i].dayofweek == 0:  # 每周的第一個交易日
+        if i >= len(pred_series):
+            break
+        if pred_series.iloc[i] == 1:
+            weekly_buy_signal = True
+        if weekly_buy_signal:
+            data.loc[data.index[i], 'Trade_Signal'] = 1
+            weekly_buy_signal = False
+
+# 確認Trade_Signal列中沒有NaN值
+data['Trade_Signal'].fillna(0, inplace=True)
 
 # 計算策略收益率
-# 添加每週一次交易的條件
-data['Trade_Signal'] = np.nan
-for i in range(0, len(data), 5):  # 每週一次，每周5個交易日
-    if not np.isnan(data.iloc[i]['Predicted_Signal']):
-        if data.iloc[i]['Predicted_Signal'] == 1:
-            data['Trade_Signal'].iloc[i] = 1
-        elif data.iloc[i]['Predicted_Signal'] == 0:
-            data['Trade_Signal'].iloc[i] = 0
-
-# 設置第一個交易信號為0，避免未來函數
-data['Trade_Signal'].fillna(method='ffill', inplace=True)
-
-# 以買入點位為例，可以修改為：
-data['Buy_Signal_Price'] = np.nan
-for i in range(len(data)):
-    if data['Trade_Signal'].iloc[i] == 1:
-        data['Buy_Signal_Price'].iloc[i] = data['Close'].iloc[i]
-
-# 累積收益計算
-data['Strategy_Return'] = data['Close'].pct_change() * data['Trade_Signal'].shift(1)
-
-# 去除第一行NaN值
-data['Strategy_Return'].iloc[0] = 0
+data['Strategy_Return'] = data['Trade_Signal'].shift(1) * data['Close'].pct_change()
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Trade_Signal'] == 1].index
-sell_signals = data[data['Trade_Signal'] == 0].index
+buy_signals = data[data['Trade_Signal'] == 1].index.tolist()
+sell_signals = data[data['Trade_Signal'] == 0].index.tolist()
 
-# 生成互動式圖表
+# 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
                                      open=data['Open'],
                                      high=data['High'],
                                      low=data['Low'],
                                      close=data['Close'],
-                                     name='K線圖'),
+                                     name='Candlestick'),
                       go.Scatter(x=buy_signals, y=data.loc[buy_signals]['Low'], mode='markers', name='買入信號',
                                  marker=dict(color='green', size=10, symbol='triangle-up')),
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='BTC-USD 交易策略 (卷積神經網絡 CNN 自主學習 無任何自定義交易策略框架 交易頻率: 每周交易一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='BTC-USD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架  交易頻率:每周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
@@ -116,8 +93,8 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買入點位: {buy_signals[:3].to_list()}</li>
-        <li>賣出點位: {sell_signals[:3].to_list()}</li>
+        <li>買入點位: {buy_signals[:3]}</li>
+        <li>賣出點位: {sell_signals[:3]}</li>
     </ul>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
@@ -130,8 +107,8 @@ html_content = f"""
 """
 
 # 寫入HTML文件
-with open("trading_CNN_autonomous_result_weekly.html", "w", encoding="utf-8") as file:
+with open("trading_SVM_autonomous_result_weekly.html", "w", encoding="utf-8") as file:
     file.write(html_content)
 
 # 打開瀏覽器
-webbrowser.open("trading_CNN_autonomous_result_weekly.html")
+webbrowser.open("trading_SVM_autonomous_result_weekly.html")

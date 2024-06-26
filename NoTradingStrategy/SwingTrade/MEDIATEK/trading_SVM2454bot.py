@@ -34,18 +34,20 @@ model.fit(X_train, y_train)
 pred = model.predict(X_test)
 
 # 將預測結果映射回原始數據的索引
-pred_series = pd.Series(pred, index=data.index[X_train.shape[0]:])
+pred_series = pd.Series(pred, index=data.index[-len(X_test):])
 
 # 每周一次交易的設置
 data['Trade_Signal'] = 0
 weekly_buy_signal = False
 for i in range(len(data)):
     if data.index[i].dayofweek == 0:  # 每周的第一個交易日
+        if i >= len(pred_series):
+            break
         if pred_series.iloc[i] == 1:
             weekly_buy_signal = True
-    if weekly_buy_signal:
-        data['Trade_Signal'].iloc[i] = 1
-        weekly_buy_signal = False
+        if weekly_buy_signal:
+            data.loc[data.index[i], 'Trade_Signal'] = 1
+            weekly_buy_signal = False
 
 # 確認Trade_Signal列中沒有NaN值
 data['Trade_Signal'].fillna(0, inplace=True)
@@ -58,8 +60,8 @@ cumulative_return = (data['Strategy_Return'] + 1).cumprod()
 final_cumulative_return = cumulative_return.iloc[-1]
 
 # 生成交易點位
-buy_signals = data[data['Trade_Signal'] == 1].index
-sell_signals = data[data['Trade_Signal'] == 0].index
+buy_signals = data[data['Trade_Signal'] == 1].index.tolist()
+sell_signals = data[data['Trade_Signal'] == 0].index.tolist()
 
 # 生成交互式圖表
 fig = go.Figure(data=[go.Candlestick(x=data.index,
@@ -91,8 +93,8 @@ html_content = f"""
     <p>{final_cumulative_return:.2f}</p>
     <h2>交易點位</h2>
     <ul>
-        <li>買入點位: {buy_signals[:3].to_list()}</li>
-        <li>賣出點位: {sell_signals[:3].to_list()}</li>
+        <li>買入點位: {buy_signals[:3]}</li>
+        <li>賣出點位: {sell_signals[:3]}</li>
     </ul>
     <h2>交易圖表</h2>
     <div id="plotly-chart"></div>
