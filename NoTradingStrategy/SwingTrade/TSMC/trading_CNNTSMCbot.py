@@ -57,10 +57,14 @@ data.iloc[-len(predictions_binary):, -1] = predictions_binary.flatten()
 # 添加每週一次交易的條件
 data['Trade_Signal'] = np.nan
 for i in range(0, len(data), 5):  # 每週一次，每周5個交易日
-    if data.iloc[i]['Predicted_Signal'] == 1:
-        data['Trade_Signal'].iloc[i] = 1
-    elif data.iloc[i]['Predicted_Signal'] == 0:
-        data['Trade_Signal'].iloc[i] = 0
+    if not np.isnan(data.iloc[i]['Predicted_Signal']):
+        if data.iloc[i]['Predicted_Signal'] == 1:
+            data['Trade_Signal'].iloc[i] = 1
+        elif data.iloc[i]['Predicted_Signal'] == 0:
+            data['Trade_Signal'].iloc[i] = 0
+
+# 設置第一個交易信號為0，避免未來函數
+data['Trade_Signal'].fillna(method='ffill', inplace=True)
 
 # 以買入點位為例，可以修改為：
 data['Buy_Signal_Price'] = np.nan
@@ -70,6 +74,9 @@ for i in range(len(data)):
 
 # 累積收益計算
 data['Strategy_Return'] = data['Close'].pct_change() * data['Trade_Signal'].shift(1)
+
+# 去除第一行NaN值
+data['Strategy_Return'].iloc[0] = 0
 
 # 累積收益計算
 cumulative_return = (data['Strategy_Return'] + 1).cumprod()
