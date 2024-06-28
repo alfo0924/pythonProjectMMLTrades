@@ -5,7 +5,7 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載比特幣的歷史數據
-data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
+data = yf.download('gc=f', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標，只保留200均線
 data['SMA_200'] = data['Close'].rolling(window=200).mean()
@@ -75,7 +75,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (卷積神經網絡 CNN + 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GC=F 交易策略 (卷積神經網絡 CNN + 均線:200均 交易頻率:一周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""

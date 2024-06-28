@@ -4,7 +4,7 @@ import webbrowser
 import plotly.graph_objects as go
 
 # 下載比特幣歷史數據
-data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
+data = yf.download('gc=f', start='2015-01-01', end='2025-06-03')
 
 # 將數據按每週重採樣，選擇每週最後一天的價格作為代表
 weekly_data = data.resample('W').last()
@@ -17,7 +17,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      close=weekly_data['Close'],
                                      name='Candlestick')])
 
-fig.update_layout(title='黃金 GOLD 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GC=F 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""

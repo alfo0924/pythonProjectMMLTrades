@@ -9,7 +9,7 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
 
 # 下載比特幣歷史數據
-data = yf.download('GOLD', start='2015-01-01', end='2025-06-03')
+data = yf.download('gc=f', start='2015-01-01', end='2025-06-03')
 
 # 將前一天的價格加入作為特徵
 data['Previous_Close'] = data['Close'].shift(1)
@@ -75,7 +75,7 @@ fig = go.Figure(data=[go.Candlestick(x=data.index,
                       go.Scatter(x=sell_signals, y=data.loc[sell_signals]['High'], mode='markers', name='賣出信號',
                                  marker=dict(color='red', size=10, symbol='triangle-down'))])
 
-fig.update_layout(title='黃金 GOLD 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架  交易頻率:每周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='黃金 GC=F 交易策略 (支持向量機 SVM 自主學習 無任何自定義交易策略框架  交易頻率:每周一次)', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
