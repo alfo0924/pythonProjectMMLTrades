@@ -8,7 +8,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 
 # 下載比特幣歷史數據
-data = yf.download('BTC-USD', start='2015-01-01', end='2025-06-03')
+data = yf.download('比特幣/美元 BTC-USD', start='2015-01-01', end='2025-06-03')
 
 # 計算移動平均線 (SMA) 作為趨勢指標
 data['SMA_5'] = data['Close'].rolling(window=5).mean()

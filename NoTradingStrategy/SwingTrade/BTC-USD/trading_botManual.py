@@ -17,7 +17,7 @@ fig = go.Figure(data=[go.Candlestick(x=weekly_data.index,
                                      close=weekly_data['Close'],
                                      name='Candlestick')])
 
-fig.update_layout(title='BTC-USD 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
+fig.update_layout(title='比特幣/美元 BTC-USD 交易策略(無任何自定義交易策略框架 交易頻率: 每周交易一次) ', xaxis_title='日期', yaxis_title='價格', showlegend=True)
 
 # 生成HTML內容
 html_content = f"""
